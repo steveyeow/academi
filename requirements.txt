@@ -1,0 +1,7 @@
+fastapi==0.115.6
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+httpx[socks]==0.27.2
+numpy==2.1.1
+pypdf==5.0.1
+python-dotenv==1.0.1

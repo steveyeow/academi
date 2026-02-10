@@ -1,0 +1,611 @@
+from __future__ import annotations
+
+import logging
+import re
+import threading
+import time
+from pathlib import Path
+from typing import Any
+
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from .core import config
+from .core.catalog import (
+    BOOK_CATALOG_SEED,
+    DISCOVERY_BATCH_SIZE,
+    DISCOVERY_INTERVAL,
+    VOTE_THRESHOLD,
+)
+from .core.db import (
+    add_message,
+    create_agent,
+    create_catalog_agent,
+    create_vote,
+    delete_agent,
+    ensure_catalog_agents,
+    find_agent_by_name,
+    get_agent,
+    init_db,
+    list_agents,
+    list_messages,
+    list_questions,
+    list_votes,
+    update_agent_meta,
+    update_agent_status,
+    upvote,
+)
+from .core.indexer import index_text
+from .core.providers import GeminiProvider, ProviderError, pick_provider
+from .core.rag import build_context, retrieve, retrieve_cross_book
+from .core.skills import resolve_multi_agent, resolve_skills
+from .core.sources import fetch_book_content, fetch_wikipedia_summary
+from .core.text_utils import extract_text_from_file
+
+log = logging.getLogger(__name__)
+
+app = FastAPI(title=config.APP_TITLE)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+static_dir = Path(__file__).resolve().parent / "static"
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+
+class TopicAgentRequest(BaseModel):
+    topic: str = Field(..., min_length=1)
+    language: str = Field("zh")
+    use_wikipedia: bool = Field(True)
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=1)
+    top_k: int | None = None
+
+
+class BookContext(BaseModel):
+    title: str
+    author: str = ""
+
+
+class GlobalChatRequest(BaseModel):
+    message: str = Field(..., min_length=1)
+    top_k: int | None = None
+    agent_ids: list[str] | None = None
+    book_context: list[BookContext] | None = None
+
+
+class VoteRequest(BaseModel):
+    title: str = Field(..., min_length=1)
+
+
+# ─── Background learning ───
+
+_learning_lock: set[str] = set()  # agent_ids currently being learned
+
+
+def _learn_agent(agent_id: str) -> None:
+    """Background task: fetch content for a catalog agent, index it, set status ready."""
+    if agent_id in _learning_lock:
+        return
+    _learning_lock.add(agent_id)
+    try:
+        agent = get_agent(agent_id)
+        if not agent or agent["status"] not in ("catalog",):
+            return
+
+        update_agent_status(agent_id, "indexing")
+
+        meta = agent.get("meta") or {}
+        title = meta.get("title") or agent["name"]
+        author = meta.get("author") or ""
+
+        text = fetch_book_content(title, author)
+        if not text:
+            # No content found — revert to catalog so it can be tried again later
+            update_agent_status(agent_id, "catalog")
+            return
+
+        index_meta = index_text(agent_id, text, update_status=False)
+        # Merge skills info + index meta into existing meta
+        skills = {"rag": True, "content_fetch": True}
+        if config.GEMINI_API_KEY:
+            skills["web_search"] = True
+        skills["llm_knowledge"] = True
+
+        merged = {**meta, **index_meta, "skills": skills}
+        update_agent_status(agent_id, "ready", merged)
+        log.info("Agent %s (%s) learned successfully", agent_id, title)
+    except Exception as exc:
+        log.error("Learning failed for agent %s: %s", agent_id, exc)
+        update_agent_status(agent_id, "error", {"error": str(exc)})
+    finally:
+        _learning_lock.discard(agent_id)
+
+
+# ─── Scheduled discovery ───
+
+def _discover_books() -> None:
+    """Discover new books based on existing categories from Open Library."""
+    try:
+        from .core.sources import fetch_open_library_text
+        agents = list_agents()
+        categories = set()
+        for a in agents:
+            cat = (a.get("meta") or {}).get("category", "")
+            if cat:
+                categories.add(cat.lower())
+        if not categories:
+            return
+
+        existing_titles = {a["name"].lower() for a in agents}
+        import httpx
+        from urllib.parse import quote_plus
+
+        created = 0
+        for cat in categories:
+            if created >= DISCOVERY_BATCH_SIZE:
+                break
+            try:
+                url = f"https://openlibrary.org/subjects/{quote_plus(cat)}.json?limit=10"
+                with httpx.Client(timeout=30) as client:
+                    resp = client.get(url)
+                if resp.status_code >= 400:
+                    continue
+                data = resp.json()
+                for work in data.get("works", []):
+                    if created >= DISCOVERY_BATCH_SIZE:
+                        break
+                    title = work.get("title", "")
+                    if not title or title.lower() in existing_titles:
+                        continue
+                    authors = work.get("authors", [])
+                    author = authors[0].get("name", "") if authors else ""
+                    create_catalog_agent(title=title, author=author, category=cat.title())
+                    existing_titles.add(title.lower())
+                    created += 1
+                    log.info("Discovered book: %s by %s", title, author)
+            except Exception as exc:
+                log.warning("Discovery for category '%s' failed: %s", cat, exc)
+        if created:
+            log.info("Discovered %d new books", created)
+    except Exception as exc:
+        log.warning("Discovery run failed: %s", exc)
+
+
+_discovery_stop = threading.Event()
+
+
+def _discovery_loop() -> None:
+    """Daemon thread running periodic book discovery."""
+    while not _discovery_stop.is_set():
+        _discovery_stop.wait(DISCOVERY_INTERVAL)
+        if _discovery_stop.is_set():
+            break
+        log.info("Running scheduled book discovery...")
+        _discover_books()
+
+
+# ─── LLM recommendation extraction ───
+
+_BOOK_PATTERN = re.compile(
+    r'["\u201c\u300a]([A-Z][\w\s:,\'-]{3,60})["\u201d\u300b]'
+    r'(?:\s+by\s+([A-Z][A-Za-z.\s]{1,40}?)(?=[,;.\n\r!?]|\s+(?:for|and|or|is|was|to|in|on|at|the)\b|$))?',
+)
+
+
+def _extract_recommended_books(text: str) -> list[dict[str, str]]:
+    """Parse LLM response for book title mentions and return new ones."""
+    matches = _BOOK_PATTERN.findall(text)
+    books: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for title, author in matches:
+        title = title.strip()
+        if title.lower() in seen:
+            continue
+        seen.add(title.lower())
+        books.append({"title": title, "author": author.strip()})
+    return books
+
+
+def _process_recommendations(text: str) -> None:
+    """Create catalog agents for any books mentioned in LLM response that don't exist yet."""
+    try:
+        books = _extract_recommended_books(text)
+        for book in books[:3]:  # limit to avoid spam
+            existing = find_agent_by_name(book["title"])
+            if not existing:
+                create_catalog_agent(title=book["title"], author=book["author"])
+                log.info("Auto-created agent from LLM recommendation: %s", book["title"])
+    except Exception as exc:
+        log.warning("Recommendation processing failed: %s", exc)
+
+
+# ─── Startup ───
+
+@app.on_event("startup")
+def on_startup() -> None:
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    init_db()
+    ensure_catalog_agents(BOOK_CATALOG_SEED)
+
+    # Start discovery daemon if enabled
+    if DISCOVERY_INTERVAL > 0:
+        t = threading.Thread(target=_discovery_loop, daemon=True)
+        t.start()
+
+
+@app.on_event("shutdown")
+def on_shutdown() -> None:
+    _discovery_stop.set()
+
+
+@app.get("/", response_class=HTMLResponse)
+def index() -> HTMLResponse:
+    html = (static_dir / "index.html").read_text(encoding="utf-8")
+    return HTMLResponse(html)
+
+
+@app.get("/api/health")
+def health() -> dict[str, Any]:
+    return {"status": "ok", "app": config.APP_NAME}
+
+
+# ─── Agent endpoints ───
+
+@app.get("/api/agents")
+def api_list_agents() -> list[dict[str, Any]]:
+    return list_agents()
+
+
+@app.get("/api/agents/{agent_id}")
+def api_get_agent(agent_id: str) -> dict[str, Any]:
+    agent = get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return agent
+
+
+@app.delete("/api/agents/{agent_id}")
+def api_delete_agent(agent_id: str) -> dict[str, Any]:
+    agent = get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    # Remove uploaded file
+    for f in config.UPLOAD_DIR.glob(f"{agent_id}_*"):
+        f.unlink(missing_ok=True)
+    delete_agent(agent_id)
+    return {"status": "deleted"}
+
+
+def _run_index(agent_id: str, text: str) -> None:
+    try:
+        index_text(agent_id, text)
+    except Exception as exc:
+        update_agent_status(agent_id, "error", {"error": str(exc)})
+
+
+@app.post("/api/agents/upload")
+def api_create_upload_agent(background_tasks: BackgroundTasks, file: UploadFile = File(...)) -> dict[str, Any]:
+    name = Path(file.filename).stem if file.filename else "Uploaded Book"
+    agent_id = create_agent(name=name, agent_type="upload", source=file.filename, meta={})
+    dest = config.UPLOAD_DIR / f"{agent_id}_{file.filename}"
+    with dest.open("wb") as f:
+        f.write(file.file.read())
+
+    try:
+        text = extract_text_from_file(dest)
+    except Exception as exc:
+        update_agent_status(agent_id, "error", {"error": str(exc)})
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    background_tasks.add_task(_run_index, agent_id, text)
+    return {"id": agent_id, "status": "indexing"}
+
+
+@app.post("/api/agents/topic")
+def api_create_topic_agent(payload: TopicAgentRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    topic = payload.topic.strip()
+    if not topic:
+        raise HTTPException(status_code=400, detail="Topic is required")
+
+    text = ""
+    if payload.use_wikipedia:
+        summary = fetch_wikipedia_summary(topic, payload.language)
+        if summary:
+            text = f"{topic}\n\n{summary}"
+
+    if not text:
+        raise HTTPException(status_code=400, detail="No source text found. Try another topic or upload material.")
+
+    agent_id = create_agent(name=topic, agent_type="topic", source="wikipedia", meta={"language": payload.language})
+    background_tasks.add_task(_run_index, agent_id, text)
+    return {"id": agent_id, "status": "indexing"}
+
+
+# ─── Book-specific chat (skill-based) ───
+
+@app.post("/api/agents/{agent_id}/chat")
+def api_chat(agent_id: str, payload: ChatRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    agent = get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    if agent["status"] in ("error",):
+        raise HTTPException(status_code=409, detail=f"Agent status is {agent['status']}")
+
+    # Trigger background learning for catalog agents
+    if agent["status"] == "catalog":
+        background_tasks.add_task(_learn_agent, agent_id)
+
+    # Resolve skills
+    skill_result = resolve_skills(agent, payload.message, top_k=payload.top_k)
+
+    # Build prompt
+    meta = agent.get("meta") or {}
+    title = meta.get("title") or agent["name"]
+    author = meta.get("author") or ""
+    book_hint = f'the book "{title}"' + (f" by {author}" if author else "")
+
+    system = (
+        "You are Feynman, a Socratic study assistant inspired by the Feynman learning method. "
+        f"You are helping the user study {book_hint}. "
+        "Answer using the provided context. If the context is insufficient, supplement with your own knowledge. "
+        "Encourage deeper thinking by occasionally suggesting follow-up questions. "
+        "Respond in the same language as the user's question."
+    )
+
+    if skill_result.context:
+        user_prompt = f"Context:\n{skill_result.context}\n\nQuestion:\n{payload.message}"
+    else:
+        user_prompt = payload.message
+
+    history = [{"role": msg["role"], "content": msg["content"]} for msg in list_messages(agent_id, limit=6)]
+
+    try:
+        chat_provider = pick_provider("chat")
+        use_grounding = skill_result.use_grounding and isinstance(chat_provider, GeminiProvider)
+        result = chat_provider.chat(system=system, user=user_prompt, history=history, use_grounding=use_grounding)
+    except ProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    add_message(agent_id, "user", payload.message)
+    add_message(agent_id, "assistant", result.content)
+
+    # Process LLM recommendations in background
+    background_tasks.add_task(_process_recommendations, result.content)
+
+    resp: dict[str, Any] = {
+        "answer": result.content,
+        "skill_used": skill_result.skill_name,
+        "provider": chat_provider.name,
+    }
+    if skill_result.metadata.get("chunks"):
+        resp["chunks"] = skill_result.metadata["chunks"]
+    if result.grounding:
+        resp["web_sources"] = result.grounding
+        resp["grounded"] = True
+    else:
+        resp["grounded"] = False
+    return resp
+
+
+# ─── Global cross-book chat (skill-based) ───
+
+@app.post("/api/chat")
+def api_global_chat(payload: GlobalChatRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    # Gather target agents
+    target_agents: list[dict[str, Any]] = []
+
+    if payload.agent_ids:
+        for aid in payload.agent_ids:
+            a = get_agent(aid)
+            if a:
+                target_agents.append(a)
+
+    # Also resolve from book_context titles (for catalog books without agent_ids in payload)
+    if payload.book_context:
+        known_ids = {a["id"] for a in target_agents}
+        for bc in payload.book_context:
+            agent = find_agent_by_name(bc.title)
+            if agent and agent["id"] not in known_ids:
+                target_agents.append(agent)
+                known_ids.add(agent["id"])
+            elif not agent:
+                # Chat-driven creation: auto-create agent for unknown book
+                new_id = create_catalog_agent(title=bc.title, author=bc.author)
+                new_agent = get_agent(new_id)
+                if new_agent:
+                    target_agents.append(new_agent)
+                    known_ids.add(new_id)
+
+    # Trigger learning for catalog agents
+    for a in target_agents:
+        if a["status"] == "catalog":
+            background_tasks.add_task(_learn_agent, a["id"])
+
+    # Build book focus string
+    book_focus = ""
+    if payload.book_context:
+        titles = [f'"{b.title}" by {b.author}' if b.author else f'"{b.title}"' for b in payload.book_context]
+        book_focus = "The user is studying: " + ", ".join(titles) + ". "
+
+    # Resolve skills for all target agents
+    use_grounding = False
+    combined_context = ""
+
+    if target_agents:
+        results = resolve_multi_agent(target_agents, payload.message, top_k=payload.top_k)
+        context_parts = []
+        for agent, sr in zip(target_agents, results):
+            if sr.use_grounding:
+                use_grounding = True
+            if sr.context:
+                context_parts.append(f"--- {agent['name']} ---\n{sr.context}")
+        combined_context = "\n\n".join(context_parts)
+
+    # Also try cross-book RAG for ready agents (supplements skill results)
+    ready_ids = [a["id"] for a in target_agents if a["status"] == "ready"]
+    rag_context = ""
+    rag_chunks: list[dict[str, Any]] = []
+    if ready_ids:
+        try:
+            rag_chunks = retrieve_cross_book(payload.message, payload.top_k, agent_ids=ready_ids)
+            rag_context = build_context(rag_chunks) if rag_chunks else ""
+        except ProviderError:
+            pass
+
+    # Merge contexts
+    if rag_context and combined_context:
+        final_context = f"{rag_context}\n\n{combined_context}"
+    elif rag_context:
+        final_context = rag_context
+    else:
+        final_context = combined_context
+
+    # Build system prompt and user message
+    if final_context:
+        system = (
+            "You are Feynman, a Socratic study assistant that helps users learn through questioning. "
+            f"{book_focus}"
+            "Use the provided context from their books to answer. "
+            "Cite which book the information comes from when relevant. "
+            "If the context is insufficient, supplement with your own knowledge but note what comes from books vs general knowledge. "
+            "Encourage deeper thinking by suggesting follow-up questions. "
+            "Respond in the same language as the user's question."
+        )
+        user_prompt = f"Context from books:\n{final_context}\n\nQuestion:\n{payload.message}"
+    elif book_focus and use_grounding:
+        system = (
+            "You are Feynman, a Socratic study assistant that helps users learn through questioning. "
+            f"{book_focus}"
+            "Use your deep knowledge of these books to answer the user's questions. "
+            "Reference specific ideas, chapters, and arguments from the books. "
+            "Encourage deeper thinking by suggesting follow-up questions. "
+            "Respond in the same language as the user's question."
+        )
+        user_prompt = payload.message
+    elif book_focus:
+        system = (
+            "You are Feynman, a Socratic study assistant that helps users learn through questioning. "
+            f"{book_focus}"
+            "Use your knowledge of these books to answer. "
+            "Reference specific ideas and concepts from the books. "
+            "Encourage deeper thinking by suggesting follow-up questions. "
+            "Respond in the same language as the user's question."
+        )
+        user_prompt = payload.message
+    else:
+        system = (
+            "You are Feynman, a Socratic study assistant that helps users learn through questioning. "
+            "The user has not selected any books yet, so answer using your own knowledge. "
+            "Be thorough and educational. Suggest relevant books the user might want to explore. "
+            "Encourage deeper thinking by suggesting follow-up questions. "
+            "Respond in the same language as the user's question."
+        )
+        user_prompt = payload.message
+
+    try:
+        chat_provider = pick_provider("chat")
+        result = chat_provider.chat(
+            system=system,
+            user=user_prompt,
+            use_grounding=use_grounding and isinstance(chat_provider, GeminiProvider),
+        )
+    except ProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    # Process LLM recommendations in background
+    background_tasks.add_task(_process_recommendations, result.content)
+
+    # Deduplicate source agents
+    seen: set[str] = set()
+    sources: list[dict[str, Any]] = []
+    for chunk in rag_chunks:
+        aid = chunk.get("agent_id")
+        if aid and aid not in seen:
+            seen.add(aid)
+            sources.append({"agent_id": aid, "agent_name": chunk.get("agent_name", "Unknown")})
+
+    resp: dict[str, Any] = {
+        "answer": result.content,
+        "sources": sources,
+        "provider": chat_provider.name,
+    }
+    if result.grounding:
+        resp["web_sources"] = result.grounding
+        resp["grounded"] = True
+    else:
+        resp["grounded"] = False
+
+    return resp
+
+
+# ─── Questions endpoint ───
+
+@app.get("/api/agents/{agent_id}/questions")
+def api_get_questions(agent_id: str) -> dict[str, Any]:
+    agent = get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    questions = list_questions(agent_id)
+    # Fallback to meta.questions if no dedicated records
+    if not questions:
+        questions = (agent.get("meta") or {}).get("questions", [])
+    return {"questions": questions}
+
+
+# ─── Messages endpoint ───
+
+@app.get("/api/agents/{agent_id}/messages")
+def api_get_messages(agent_id: str) -> list[dict[str, Any]]:
+    agent = get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return list_messages(agent_id, limit=50)
+
+
+# ─── Vote endpoints (with auto-creation threshold) ───
+
+@app.get("/api/votes")
+def api_list_votes() -> list[dict[str, Any]]:
+    return list_votes()
+
+
+@app.post("/api/votes")
+def api_create_vote(payload: VoteRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    result = create_vote(payload.title.strip())
+    # If vote count reaches threshold, auto-create a catalog agent and learn it
+    if result["count"] >= VOTE_THRESHOLD:
+        existing = find_agent_by_name(payload.title.strip())
+        if not existing:
+            agent_id = create_catalog_agent(title=payload.title.strip())
+            background_tasks.add_task(_learn_agent, agent_id)
+        elif existing["status"] == "catalog":
+            background_tasks.add_task(_learn_agent, existing["id"])
+    return result
+
+
+@app.post("/api/votes/{vote_id}/upvote")
+def api_upvote(vote_id: str, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    result = upvote(vote_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Vote not found")
+    # Check threshold
+    if result["count"] >= VOTE_THRESHOLD:
+        existing = find_agent_by_name(result["title"])
+        if not existing:
+            agent_id = create_catalog_agent(title=result["title"])
+            background_tasks.add_task(_learn_agent, agent_id)
+        elif existing["status"] == "catalog":
+            background_tasks.add_task(_learn_agent, existing["id"])
+    return result

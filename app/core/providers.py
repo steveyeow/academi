@@ -1,0 +1,240 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+import httpx
+
+from . import config
+
+
+class ProviderError(RuntimeError):
+    pass
+
+
+@dataclass
+class ChatResult:
+    content: str
+    raw: dict[str, Any]
+    grounding: list[dict[str, str]] | None = None  # [{title, url, snippet}]
+
+
+class BaseProvider:
+    name: str
+
+    def has_key(self) -> bool:
+        raise NotImplementedError
+
+    def supports_embeddings(self) -> bool:
+        return False
+
+    def embed_texts(self, texts: list[str], task_type: str | None = None) -> list[list[float]]:
+        raise NotImplementedError
+
+    def chat(self, system: str, user: str, history: list[dict[str, str]] | None = None, use_grounding: bool = False) -> ChatResult:
+        raise NotImplementedError
+
+
+class OpenAICompatibleProvider(BaseProvider):
+    def __init__(self, name: str, api_key: str, base_url: str, chat_model: str, embed_model: str | None = None):
+        self.name = name
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.chat_model = chat_model
+        self.embed_model = embed_model
+
+    def has_key(self) -> bool:
+        return bool(self.api_key)
+
+    def supports_embeddings(self) -> bool:
+        return bool(self.embed_model)
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        url = f"{self.base_url}{path}"
+        with httpx.Client(timeout=60) as client:
+            resp = client.post(url, headers=self._headers(), json=payload)
+        if resp.status_code >= 400:
+            raise ProviderError(f"{self.name} error {resp.status_code}: {resp.text}")
+        return resp.json()
+
+    def embed_texts(self, texts: list[str], task_type: str | None = None) -> list[list[float]]:
+        if not self.embed_model:
+            raise ProviderError(f"{self.name} does not support embeddings (missing model)")
+        payload = {
+            "model": self.embed_model,
+            "input": texts,
+        }
+        data = self._post("/embeddings", payload)
+        return [item["embedding"] for item in data.get("data", [])]
+
+    def chat(self, system: str, user: str, history: list[dict[str, str]] | None = None, use_grounding: bool = False) -> ChatResult:
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": user})
+        payload = {
+            "model": self.chat_model,
+            "messages": messages,
+            "temperature": 0.2,
+        }
+        data = self._post("/chat/completions", payload)
+        content = data["choices"][0]["message"]["content"]
+        return ChatResult(content=content, raw=data)
+
+
+class GeminiProvider(BaseProvider):
+    name = "gemini"
+
+    def __init__(self, api_key: str, base_url: str, chat_model: str, embed_model: str):
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.chat_model = chat_model
+        self.embed_model = embed_model
+
+    def has_key(self) -> bool:
+        return bool(self.api_key)
+
+    def supports_embeddings(self) -> bool:
+        return bool(self.embed_model)
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "x-goog-api-key": self.api_key,
+            "Content-Type": "application/json",
+        }
+
+    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        url = f"{self.base_url}{path}"
+        with httpx.Client(timeout=60) as client:
+            resp = client.post(url, headers=self._headers(), json=payload)
+        if resp.status_code >= 400:
+            raise ProviderError(f"Gemini error {resp.status_code}: {resp.text}")
+        return resp.json()
+
+    def embed_texts(self, texts: list[str], task_type: str | None = None) -> list[list[float]]:
+        task_type = task_type or "RETRIEVAL_DOCUMENT"
+        path = f"/models/{self.embed_model}:batchEmbedContents"
+        requests = [
+            {
+                "model": f"models/{self.embed_model}",
+                "content": {"parts": [{"text": text}]},
+                "taskType": task_type,
+            }
+            for text in texts
+        ]
+        payload = {"requests": requests}
+        data = self._post(path, payload)
+        embeddings = []
+        for item in data.get("embeddings", []):
+            embeddings.append(item.get("values", []))
+        return embeddings
+
+    def chat(self, system: str, user: str, history: list[dict[str, str]] | None = None, use_grounding: bool = False) -> ChatResult:
+        parts: list[dict[str, str]] = []
+        prompt = system.strip()
+        if prompt:
+            prompt = f"{prompt}\n\n"
+        prompt += user
+        parts.append({"text": prompt})
+        payload: dict[str, Any] = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": parts,
+                }
+            ]
+        }
+        if use_grounding:
+            payload["tools"] = [{"google_search": {}}]
+        path = f"/models/{self.chat_model}:generateContent"
+        data = self._post(path, payload)
+        candidates = data.get("candidates", [])
+        if not candidates:
+            raise ProviderError("Gemini returned no candidates")
+        content_parts = candidates[0].get("content", {}).get("parts", [])
+        text = "".join(part.get("text", "") for part in content_parts)
+
+        # Parse grounding metadata if present
+        grounding = None
+        grounding_meta = candidates[0].get("groundingMetadata")
+        if grounding_meta:
+            grounding = []
+            for chunk in grounding_meta.get("groundingChunks", []):
+                web = chunk.get("web", {})
+                if web.get("uri"):
+                    grounding.append({
+                        "title": web.get("title", ""),
+                        "url": web["uri"],
+                    })
+
+        return ChatResult(content=text, raw=data, grounding=grounding)
+
+
+def _openai_provider() -> OpenAICompatibleProvider:
+    return OpenAICompatibleProvider(
+        name="openai",
+        api_key=config.OPENAI_API_KEY,
+        base_url=config.OPENAI_BASE_URL,
+        chat_model=config.OPENAI_CHAT_MODEL,
+        embed_model=config.OPENAI_EMBED_MODEL,
+    )
+
+
+def _kimi_provider() -> OpenAICompatibleProvider:
+    return OpenAICompatibleProvider(
+        name="kimi",
+        api_key=config.KIMI_API_KEY,
+        base_url=config.KIMI_BASE_URL,
+        chat_model=config.KIMI_CHAT_MODEL,
+        embed_model=config.KIMI_EMBED_MODEL or None,
+    )
+
+
+def _gemini_provider() -> GeminiProvider:
+    return GeminiProvider(
+        api_key=config.GEMINI_API_KEY,
+        base_url=config.GEMINI_BASE_URL,
+        chat_model=config.GEMINI_CHAT_MODEL,
+        embed_model=config.GEMINI_EMBED_MODEL,
+    )
+
+
+def get_provider(name: str) -> BaseProvider:
+    name = name.lower()
+    if name == "openai":
+        return _openai_provider()
+    if name == "gemini":
+        return _gemini_provider()
+    if name == "kimi":
+        return _kimi_provider()
+    raise ProviderError(f"Unknown provider: {name}")
+
+
+def pick_provider(kind: str) -> BaseProvider:
+    kind = kind.lower()
+    target = config.CHAT_PROVIDER if kind == "chat" else config.EMBED_PROVIDER
+    if target != "auto":
+        provider = get_provider(target)
+        if not provider.has_key():
+            raise ProviderError(f"{target} key missing")
+        if kind == "embed" and not provider.supports_embeddings():
+            raise ProviderError(f"{target} does not support embeddings")
+        return provider
+
+    for name in config.PROVIDER_ORDER:
+        provider = get_provider(name)
+        if not provider.has_key():
+            continue
+        if kind == "embed" and not provider.supports_embeddings():
+            continue
+        return provider
+
+    raise ProviderError(f"No available provider for {kind}")
