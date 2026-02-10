@@ -665,16 +665,29 @@ body {
   padding: 32px 32px 64px;
   width: 100%;
 }
+.chats-header {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 16px;
+}
 .chats-search {
-  width: 100%; padding: 10px 16px;
+  flex: 1; padding: 10px 16px;
   border: 1px solid var(--border-strong);
   border-radius: 10px; outline: none;
   background: var(--bg-chat);
   font-size: 14px; font-family: inherit;
   color: var(--text);
-  margin-bottom: 16px;
 }
 .chats-search::placeholder { color: var(--text-muted); }
+.chats-new-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 10px 16px; border-radius: 10px;
+  border: none; background: var(--text); color: #fff;
+  font-size: 13px; font-weight: 600; font-family: inherit;
+  cursor: pointer; white-space: nowrap;
+  transition: opacity 0.15s;
+}
+.chats-new-btn:hover { opacity: 0.85; }
+.chats-new-btn svg { flex-shrink: 0; }
 .chats-list {
   display: flex; flex-direction: column; gap: 2px;
 }
@@ -696,6 +709,14 @@ body {
   padding: 48px 16px; text-align: center;
   font-size: 13px; color: var(--text-muted);
 }
+
+/* ─── Topic tags (library page) ─── */
+.topic-tags-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+.topic-tag { padding: 8px 16px; border-radius: 20px; border: 1px solid var(--border); background: var(--bg-chat); color: var(--text-secondary); cursor: pointer; font-size: 13px; font-family: inherit; transition: all 0.2s; display: inline-flex; align-items: center; }
+.topic-tag:hover { border-color: var(--accent); color: var(--text); }
+.topic-tag.selected { background: var(--accent); color: white; border-color: var(--accent); }
+.topic-tag.discovered { border-color: var(--accent); color: var(--accent); }
+.topic-tag.loading { opacity: 0.6; pointer-events: none; }
 
 /* ─── Responsive ─── */
 @media (max-width: 900px) {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 import threading
@@ -15,9 +16,10 @@ from pydantic import BaseModel, Field
 
 from .core import config
 from .core.catalog import (
-    BOOK_CATALOG_SEED,
     DISCOVERY_BATCH_SIZE,
     DISCOVERY_INTERVAL,
+    TOPIC_DISCOVER_COUNT,
+    TOPIC_TAGS,
     VOTE_THRESHOLD,
 )
 from .core.db import (
@@ -26,7 +28,6 @@ from .core.db import (
     create_catalog_agent,
     create_vote,
     delete_agent,
-    ensure_catalog_agents,
     find_agent_by_name,
     get_agent,
     init_db,
@@ -134,52 +135,71 @@ def _learn_agent(agent_id: str) -> None:
 
 # ─── Scheduled discovery ───
 
-def _discover_books() -> None:
-    """Discover new books based on existing categories from Open Library."""
+def _discover_books_for_topic(topic: str, count: int = TOPIC_DISCOVER_COUNT) -> list[dict[str, Any]]:
+    """Use LLM to discover top books for a topic. Returns list of {id, title, author, created}."""
+    prompt = (
+        f"Recommend exactly {count} must-read books on the topic \"{topic}\". "
+        "Return a JSON array of objects with keys: title, author, description (one sentence). "
+        "Only output the JSON array, no other text."
+    )
     try:
-        from .core.sources import fetch_open_library_text
+        provider = pick_provider("chat")
+        result = provider.chat(system="You are a book recommendation expert.", user=prompt)
+        text = result.content.strip()
+        # Strip markdown code fences if present
+        if text.startswith("```"):
+            text = re.sub(r"^```\w*\n?", "", text)
+            text = re.sub(r"\n?```$", "", text)
+
+        books_data = json.loads(text)
+    except Exception as exc:
+        log.warning("LLM discovery for topic '%s' failed: %s", topic, exc)
+        return []
+
+    results: list[dict[str, Any]] = []
+    for entry in books_data[:count]:
+        title = entry.get("title", "").strip()
+        author = entry.get("author", "").strip()
+        desc = entry.get("description", "").strip()
+        if not title:
+            continue
+        agent_id = create_catalog_agent(
+            title=title, author=author, category=topic, description=desc,
+        )
+        existing = find_agent_by_name(title)
+        created = existing is not None and existing["id"] == agent_id
+        results.append({"id": agent_id, "title": title, "author": author, "created": created})
+        log.info("Discovered book: %s by %s [%s]", title, author, topic)
+    return results
+
+
+def _discover_books() -> None:
+    """Scheduled discovery: pick underrepresented categories and discover new books via LLM."""
+    try:
         agents = list_agents()
-        categories = set()
+        # Count books per category
+        cat_counts: dict[str, int] = {}
         for a in agents:
             cat = (a.get("meta") or {}).get("category", "")
             if cat:
-                categories.add(cat.lower())
-        if not categories:
+                cat_counts[cat] = cat_counts.get(cat, 0) + 1
+
+        if not cat_counts:
             return
 
-        existing_titles = {a["name"].lower() for a in agents}
-        import httpx
-        from urllib.parse import quote_plus
-
+        # Pick the category with fewest books
+        sorted_cats = sorted(cat_counts.items(), key=lambda x: x[1])
         created = 0
-        for cat in categories:
+        for cat, _ in sorted_cats:
             if created >= DISCOVERY_BATCH_SIZE:
                 break
-            try:
-                url = f"https://openlibrary.org/subjects/{quote_plus(cat)}.json?limit=10"
-                with httpx.Client(timeout=30) as client:
-                    resp = client.get(url)
-                if resp.status_code >= 400:
-                    continue
-                data = resp.json()
-                for work in data.get("works", []):
-                    if created >= DISCOVERY_BATCH_SIZE:
-                        break
-                    title = work.get("title", "")
-                    if not title or title.lower() in existing_titles:
-                        continue
-                    authors = work.get("authors", [])
-                    author = authors[0].get("name", "") if authors else ""
-                    create_catalog_agent(title=title, author=author, category=cat.title())
-                    existing_titles.add(title.lower())
-                    created += 1
-                    log.info("Discovered book: %s by %s", title, author)
-            except Exception as exc:
-                log.warning("Discovery for category '%s' failed: %s", cat, exc)
+            new_books = _discover_books_for_topic(cat, count=DISCOVERY_BATCH_SIZE - created)
+            created += len(new_books)
+
         if created:
-            log.info("Discovered %d new books", created)
+            log.info("Scheduled discovery: %d new books", created)
     except Exception as exc:
-        log.warning("Discovery run failed: %s", exc)
+        log.warning("Scheduled discovery run failed: %s", exc)
 
 
 _discovery_stop = threading.Event()
@@ -237,7 +257,6 @@ def on_startup() -> None:
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     init_db()
-    ensure_catalog_agents(BOOK_CATALOG_SEED)
 
     # Start discovery daemon if enabled
     if DISCOVERY_INTERVAL > 0:
@@ -259,6 +278,29 @@ def index() -> HTMLResponse:
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     return {"status": "ok", "app": config.APP_NAME}
+
+
+# ─── Topic discovery endpoints ───
+
+@app.get("/api/topics")
+def api_topics() -> dict[str, Any]:
+    return {"topics": TOPIC_TAGS}
+
+
+class DiscoverRequest(BaseModel):
+    topic: str = Field(..., min_length=1)
+    count: int = Field(default=TOPIC_DISCOVER_COUNT, ge=1, le=10)
+
+
+@app.post("/api/discover")
+def api_discover(payload: DiscoverRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    books = _discover_books_for_topic(payload.topic.strip(), count=payload.count)
+    # Trigger background learning for each new agent
+    for book in books:
+        agent = get_agent(book["id"])
+        if agent and agent["status"] == "catalog":
+            background_tasks.add_task(_learn_agent, book["id"])
+    return {"topic": payload.topic.strip(), "books": books}
 
 
 # ─── Agent endpoints ───

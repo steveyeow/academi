@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Feynman</title>
-    <link rel="stylesheet" href="/static/styles.css?v=7" />
+    <link rel="stylesheet" href="/static/styles.css?v=9" />
   </head>
   <body>
     <div class="app-layout" id="app-layout">
@@ -75,7 +75,7 @@
                 </button>
               </div>
             </div>
-            <p class="home-hint"><a href="#/library" id="home-upload-link" class="hint-link" onclick="event.preventDefault(); event.stopPropagation(); togglePopover('home-popover', 'home-popover-book-list', 'home-popover-no-books')">Add one or more books</a> to start a conversation</p>
+            <p class="home-hint"><a href="#/library" class="hint-link">Browse topics in the library</a> or ask a question to discover books</p>
             <div id="home-upload-status" class="home-status"></div>
           </div>
           <p class="home-quote">"You learn by asking questions, by thinking, and by experimenting." — Richard Feynman</p>
@@ -127,6 +127,7 @@
         <div id="page-library" class="page-view library-page hidden">
           <div class="library-content">
             <h1 class="page-title">Library</h1>
+            <div class="topic-tags-grid" id="topic-tags-grid"></div>
             <div class="library-toolbar">
               <input type="text" id="library-search" placeholder="Search books..." autocomplete="off" />
               <div class="filter-tags">
@@ -142,8 +143,13 @@
         <!-- ─── CHATS PAGE ─── -->
         <div id="page-chats" class="page-view chats-page hidden">
           <div class="chats-content">
-            <h1 class="page-title">Chats</h1>
-            <input type="text" id="chats-search" class="chats-search" placeholder="Search chats..." autocomplete="off" />
+            <div class="chats-header">
+              <input type="text" id="chats-search" class="chats-search" placeholder="Search chats..." autocomplete="off" />
+              <button id="chats-new-btn" class="chats-new-btn" title="New Chat">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                New Chat
+              </button>
+            </div>
             <div id="chats-list" class="chats-list"></div>
             <div id="chats-empty" class="chats-empty">No conversations yet</div>
           </div>
@@ -182,6 +188,6 @@
       </div><!-- .app-main -->
     </div><!-- .app-layout -->
 
-    <script src="/static/app.js?v=7"></script>
+    <script src="/static/app.js?v=9"></script>
   </body>
 </html>

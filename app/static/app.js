@@ -15,6 +15,12 @@ let chatSessions = [];
 let currentSessionId = null;
 let sessionCounter = 0;
 
+// Topic discovery state
+let topicTags = [];
+let selectedTopics = new Set(JSON.parse(localStorage.getItem('selectedTopics') || '[]'));
+let discoveredTopics = new Set(JSON.parse(localStorage.getItem('discoveredTopics') || '[]'));
+let loadingTopics = new Set();
+
 const MOCK_QUESTIONS = [
   'What is the central thesis of this book?',
   'How does the author support their main argument?',
@@ -85,6 +91,68 @@ async function loadAgents() {
 
 async function loadVotes() {
   try { votes = await api('/api/votes'); } catch { votes = []; }
+}
+
+async function loadTopics() {
+  try {
+    const data = await api('/api/topics');
+    topicTags = data.topics || [];
+  } catch { topicTags = []; }
+}
+
+function renderTopicTags() {
+  const grid = document.getElementById('topic-tags-grid');
+  if (!grid || !topicTags.length) return;
+  grid.innerHTML = topicTags.map(topic => {
+    const isLoading = loadingTopics.has(topic);
+    const isDiscovered = discoveredTopics.has(topic);
+    const isSelected = selectedTopics.has(topic);
+    let cls = 'topic-tag';
+    if (isLoading) cls += ' loading';
+    else if (isSelected || isDiscovered) cls += ' discovered';
+    const check = isDiscovered ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>' : '';
+    const spinner = isLoading ? '<span class="loading-dot" style="margin-right:4px;font-size:11px">...</span>' : '';
+    return `<button class="${cls}" data-topic="${esc(topic)}">${spinner}${check}${esc(topic)}</button>`;
+  }).join('');
+  grid.querySelectorAll('.topic-tag').forEach(btn => {
+    btn.addEventListener('click', () => handleTopicClick(btn.dataset.topic));
+  });
+}
+
+async function handleTopicClick(topic) {
+  if (loadingTopics.has(topic)) return;
+
+  if (discoveredTopics.has(topic)) {
+    // Already discovered — toggle selection (visual only)
+    if (selectedTopics.has(topic)) selectedTopics.delete(topic);
+    else selectedTopics.add(topic);
+    localStorage.setItem('selectedTopics', JSON.stringify([...selectedTopics]));
+    renderTopicTags();
+    return;
+  }
+
+  // Discover books for this topic
+  selectedTopics.add(topic);
+  loadingTopics.add(topic);
+  renderTopicTags();
+
+  try {
+    await api('/api/discover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic }),
+    });
+    discoveredTopics.add(topic);
+    localStorage.setItem('discoveredTopics', JSON.stringify([...discoveredTopics]));
+    await loadAgents();
+    renderLibraryGrid();
+  } catch (err) {
+    selectedTopics.delete(topic);
+  } finally {
+    loadingTopics.delete(topic);
+    localStorage.setItem('selectedTopics', JSON.stringify([...selectedTopics]));
+    renderTopicTags();
+  }
 }
 
 // ─── Build book list from agents (DB is the single source of truth) ───
@@ -433,7 +501,7 @@ function selectBookFromSidebar(bookKey) {
 window.selectBookFromSidebar = selectBookFromSidebar;
 
 // ─── Library ───
-function renderLibrary() { renderLibraryGrid(); }
+function renderLibrary() { renderTopicTags(); renderLibraryGrid(); }
 
 function renderLibraryGrid() {
   const c = document.getElementById('library-grid');
@@ -723,7 +791,7 @@ function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.
 
 // ─── Init ───
 async function init() {
-  await Promise.all([loadAgents(), loadVotes()]);
+  await Promise.all([loadAgents(), loadVotes(), loadTopics()]);
   buildBookList();
 
   document.getElementById('app-layout').classList.add('sidebar-collapsed');
@@ -732,9 +800,15 @@ async function init() {
   document.getElementById('sidebar-toggle-btn').addEventListener('click', toggleSidebar);
   document.getElementById('sidebar-float-btn').addEventListener('click', toggleSidebar);
 
-  // Chats search
+  // Chats page
   document.getElementById('chats-search').addEventListener('input', e => {
     _renderChatsList(e.target.value.trim().toLowerCase());
+  });
+  document.getElementById('chats-new-btn').addEventListener('click', () => {
+    saveCurrentSession();
+    currentSessionId = null;
+    selectedBooks.clear();
+    window.location.hash = '#/';
   });
 
   // New Chat → go to homepage
@@ -757,7 +831,6 @@ async function init() {
   uploadBtn.addEventListener('click', e => { e.stopPropagation(); togglePopover('home-popover', 'home-popover-book-list', 'home-popover-no-books'); });
   document.getElementById('home-popover-upload').addEventListener('click', () => { closeAllPopovers(); uploadInput.click(); });
   uploadInput.addEventListener('change', () => { if (uploadInput.files.length) { handleFileUpload(uploadInput.files, 'home-upload-status'); uploadInput.value = ''; } });
-  document.getElementById('home-upload-link').addEventListener('click', e => { e.preventDefault(); togglePopover('home-popover', 'home-popover-book-list', 'home-popover-no-books'); });
 
   // Chat page composer
   const chatInput = document.getElementById('chat-input');
