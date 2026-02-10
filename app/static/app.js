@@ -36,6 +36,7 @@ function getRoute() {
   const hash = window.location.hash || '#/';
   if (hash === '#/' || hash === '#') return { page: 'home' };
   if (hash === '#/chat') return { page: 'chat' };
+  if (hash === '#/chats') return { page: 'chats' };
   if (hash === '#/library') return { page: 'library' };
   const m = hash.match(/^#\/book\/(.+)$/);
   if (m) return { page: 'book', id: m[1] };
@@ -44,8 +45,6 @@ function getRoute() {
 
 function navigate() {
   const route = getRoute();
-  const chatsOverlay = document.getElementById('chats-overlay');
-  if (chatsOverlay) chatsOverlay.classList.add('hidden');
   document.querySelectorAll('.page-view').forEach(el => el.classList.add('hidden'));
   const el = document.getElementById('page-' + route.page);
   if (el) el.classList.remove('hidden');
@@ -53,9 +52,10 @@ function navigate() {
   switch (route.page) {
     case 'home':
       renderHome();
-      renderSelectedChips(); // show chips on home too
+      renderSelectedChips();
       break;
     case 'chat': onChatPageShow(); break;
+    case 'chats': renderChatsPage(); break;
     case 'library': renderLibrary(); break;
     case 'book':
       currentBookId = route.id;
@@ -258,24 +258,16 @@ function renderChatHistory() {
   });
 }
 
-// ─── Chats overlay panel ───
-function toggleChatsPanel() {
-  const overlay = document.getElementById('chats-overlay');
-  if (overlay.classList.contains('hidden')) {
-    overlay.classList.remove('hidden');
-    document.getElementById('chats-search').value = '';
-    renderChatsPanel('');
-    document.getElementById('chats-search').focus();
-  } else {
-    closeChatsPanel();
-  }
+// ─── Chats page ───
+function renderChatsPage() {
+  const listEl = document.getElementById('chats-list');
+  const emptyEl = document.getElementById('chats-empty');
+  const searchEl = document.getElementById('chats-search');
+  searchEl.value = '';
+  _renderChatsList('');
 }
 
-function closeChatsPanel() {
-  document.getElementById('chats-overlay').classList.add('hidden');
-}
-
-function renderChatsPanel(query) {
+function _renderChatsList(query) {
   const listEl = document.getElementById('chats-list');
   const emptyEl = document.getElementById('chats-empty');
   let sessions = chatSessions;
@@ -296,7 +288,6 @@ function renderChatsPanel(query) {
   ).join('');
   listEl.querySelectorAll('.chats-list-item').forEach(el => {
     el.addEventListener('click', () => {
-      closeChatsPanel();
       switchToSession(el.dataset.sid);
     });
   });
@@ -741,15 +732,9 @@ async function init() {
   document.getElementById('sidebar-toggle-btn').addEventListener('click', toggleSidebar);
   document.getElementById('sidebar-float-btn').addEventListener('click', toggleSidebar);
 
-  // Chats → show chats overlay panel
-  document.getElementById('sidebar-chats-btn').addEventListener('click', () => {
-    toggleChatsPanel();
-  });
-  document.getElementById('chats-overlay').addEventListener('click', e => {
-    if (e.target === document.getElementById('chats-overlay')) closeChatsPanel();
-  });
+  // Chats search
   document.getElementById('chats-search').addEventListener('input', e => {
-    renderChatsPanel(e.target.value.trim().toLowerCase());
+    _renderChatsList(e.target.value.trim().toLowerCase());
   });
 
   // New Chat → go to homepage
