@@ -1,32 +1,72 @@
-# ChatBook MVP
+# AcademiAI
 
-最小可运行版本：上传书籍/文档或创建主题 Agent，并通过对话方式检索学习。
+A Socratic study assistant that turns any book into an intelligent agent. Ask questions, get answers grounded in real book content, and let the system learn and grow its library automatically.
 
-## 功能
-- 上传 `.txt` / `.pdf` 生成可对话 Agent
-- 主题 Agent（默认抓取维基百科摘要）
-- 基于向量检索 + LLM 回答
+## How It Works
 
-## 运行
+Every book is an **Agent** with pluggable **Skills**:
+
+| Skill | Priority | Description |
+|-------|----------|-------------|
+| RAG | 1st | Retrieves from indexed chunks (requires content) |
+| Content Fetch | 2nd | Pulls info from Open Library / Google Books / Wikipedia |
+| Web Search | 3rd | Gemini Search Grounding for real-time answers |
+| LLM Knowledge | 4th | Falls back to the model's training knowledge |
+
+When you chat with a book, skills are tried in order — the first one that succeeds provides the context for the answer.
+
+## Catalog Growth
+
+The library starts with 24 seed books and grows through 4 mechanisms:
+
+- **Upload** — Upload PDF/TXT files to create agents
+- **Chat-driven** — Mention an unknown book in chat → agent auto-created
+- **Vote threshold** — Books that receive enough upvotes get auto-indexed
+- **Scheduled discovery** — Periodically discovers new books from Open Library based on existing categories
+
+Catalog books start in `catalog` status. On first chat, the system fetches content in the background and indexes it — subsequent chats use full RAG.
+
+## Quick Start
+
 ```bash
+git clone https://github.com/steveyeow/academi.git
+cd academi
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
+cp .env.example .env   # add at least one API key
 uvicorn app.main:app --reload
 ```
 
-访问 `http://127.0.0.1:8000`
+Open http://localhost:8000
 
-## 配置
-编辑 `.env` 设置 API Key：
-- `GEMINI_API_KEY`
-- `OPENAI_API_KEY`
-- `KIMI_API_KEY`
+## Configuration
 
-默认会优先使用 `gemini`，其次 `openai`，最后 `kimi`。
+Edit `.env` to set your LLM provider keys. At least one is required:
 
-## 提示
-- 主题 Agent 目前只抓取维基百科摘要文本。
-- 如果要更高质量检索，可以在后续接入更多来源（论文库、教材库、爬虫）。
+| Variable | Provider | Notes |
+|----------|----------|-------|
+| `GEMINI_API_KEY` | Google Gemini | Recommended — supports embeddings + web search grounding |
+| `OPENAI_API_KEY` | OpenAI | GPT-4o-mini for chat, text-embedding-3-small for embeddings |
+| `KIMI_API_KEY` | Moonshot Kimi | Chat only, no embeddings |
 
+The system auto-selects the best available provider (order: Gemini → OpenAI → Kimi).
+
+### Auto-update settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VOTE_THRESHOLD` | 3 | Upvotes needed to auto-index a book |
+| `DISCOVERY_INTERVAL` | 21600 | Seconds between discovery runs (0 to disable) |
+| `DISCOVERY_BATCH_SIZE` | 5 | Max books discovered per run |
+
+## Tech Stack
+
+- **Backend**: FastAPI + SQLite (vector embeddings as BLOBs)
+- **Frontend**: Vanilla JS SPA with hash-based routing
+- **LLM**: Multi-provider with auto-fallback (Gemini, OpenAI, Kimi)
+- **Search**: Cosine similarity over embeddings, Gemini Search Grounding
+
+## License
+
+MIT
