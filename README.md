@@ -1,30 +1,40 @@
 # AcademiAI
 
-A Socratic study assistant that turns any book into an intelligent agent. Ask questions, get answers grounded in real book content, and let the system learn and grow its library automatically.
+**Turn any book into a conversation.** AcademiAI is a Socratic study assistant that lets you chat with books, discover new ones through your interests, and get answers grounded in real content — with traceable citations back to the source.
 
-## How It Works
+## Core Features
 
-Every book is an **Agent** with pluggable **Skills**:
+### Interest-Driven Book Discovery
+Pick topics you care about — Psychology, Philosophy, Economics, Physics, and more. The system uses LLM to curate the best books for each topic and adds them to your personal library instantly. No predefined catalog; your library grows from your curiosity.
 
-| Skill | Priority | Description |
-|-------|----------|-------------|
-| RAG | 1st | Retrieves from indexed chunks (requires content) |
-| Content Fetch | 2nd | Pulls info from Open Library / Google Books / Wikipedia |
-| Web Search | 3rd | Gemini Search Grounding for real-time answers |
-| LLM Knowledge | 4th | Falls back to the model's training knowledge |
+### Chat With Any Book
+Ask questions about a book and get answers powered by a multi-layered skill system:
 
-When you chat with a book, skills are tried in order — the first one that succeeds provides the context for the answer.
+| Skill | What it does |
+|-------|-------------|
+| **RAG** | Retrieves relevant passages from the book's indexed content |
+| **Content Fetch** | Pulls information from Open Library, Google Books, and Wikipedia |
+| **Web Search** | Uses Gemini Search Grounding for real-time web answers |
+| **LLM Knowledge** | Falls back to the model's training knowledge |
 
-## Catalog Growth
+Skills are tried in priority order — you always get the best available answer.
 
-The library starts with 24 seed books and grows through 4 mechanisms:
+### Cross-Book Search
+Select multiple books and ask questions across all of them. AcademiAI searches across your entire library to find the most relevant passages, regardless of which book they come from.
 
-- **Upload** — Upload PDF/TXT files to create agents
-- **Chat-driven** — Mention an unknown book in chat → agent auto-created
-- **Vote threshold** — Books that receive enough upvotes get auto-indexed
-- **Scheduled discovery** — Periodically discovers new books from Open Library based on existing categories
+### Traceable Citations
+Every answer cites its sources with clickable `[1]`, `[2]` markers. Click a citation to jump to the reference — see exactly which book and passage the answer came from. No more black-box AI responses.
 
-Catalog books start in `catalog` status. On first chat, the system fetches content in the background and indexes it — subsequent chats use full RAG.
+### Self-Growing Library
+Your library expands naturally through multiple channels:
+- **Topic discovery** — Pick an interest, get curated book recommendations via LLM
+- **Search & add** — Search for any book in the library; if it's not there, the system finds and adds it automatically
+- **Chat-driven** — Mention an unknown book in conversation and it gets added to your library
+- **Upload** — Bring your own PDF or TXT files
+- **Community voting** — Books with enough upvotes get auto-indexed
+
+### Token Usage Transparency
+Every LLM call shows its token consumption — chat responses, book discovery, and search operations all display cost in real time. No hidden usage.
 
 ## Quick Start
 
@@ -47,25 +57,29 @@ Edit `.env` to set your LLM provider keys. At least one is required:
 | Variable | Provider | Notes |
 |----------|----------|-------|
 | `GEMINI_API_KEY` | Google Gemini | Recommended — supports embeddings + web search grounding |
+| `DEEPSEEK_API_KEY` | DeepSeek | Cost-effective chat, no embeddings |
 | `OPENAI_API_KEY` | OpenAI | GPT-4o-mini for chat, text-embedding-3-small for embeddings |
 | `KIMI_API_KEY` | Moonshot Kimi | Chat only, no embeddings |
+| `ANTHROPIC_API_KEY` | Anthropic Claude | Chat only, no embeddings |
 
-The system auto-selects the best available provider (order: Gemini → OpenAI → Kimi).
+The system auto-selects the best available provider and falls back through the chain: Gemini → DeepSeek → OpenAI → Kimi → Anthropic.
 
-### Auto-update settings
+### Library settings
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `VOTE_THRESHOLD` | 3 | Upvotes needed to auto-index a book |
-| `DISCOVERY_INTERVAL` | 21600 | Seconds between discovery runs (0 to disable) |
-| `DISCOVERY_BATCH_SIZE` | 5 | Max books discovered per run |
+| `DISCOVERY_INTERVAL` | 21600 | Seconds between scheduled discovery runs (0 to disable) |
+| `DISCOVERY_BATCH_SIZE` | 5 | Max books discovered per scheduled run |
+| `TOPIC_DISCOVER_COUNT` | 5 | Books discovered per topic click |
 
 ## Tech Stack
 
-- **Backend**: FastAPI + SQLite (vector embeddings as BLOBs)
-- **Frontend**: Vanilla JS SPA with hash-based routing
-- **LLM**: Multi-provider with auto-fallback (Gemini, OpenAI, Kimi)
-- **Search**: Cosine similarity over embeddings, Gemini Search Grounding
+- **Backend**: Python / FastAPI, SQLite with vector embeddings stored as BLOBs
+- **Frontend**: Vanilla JS SPA, hash-based routing, no framework dependencies
+- **LLM**: 5-provider auto-fallback (Gemini, DeepSeek, OpenAI, Kimi, Anthropic)
+- **RAG**: Cosine similarity over embeddings + Gemini Search Grounding
+- **Persistence**: Chat sessions in localStorage, book data in SQLite
 
 ## License
 
