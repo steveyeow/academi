@@ -593,16 +593,20 @@ def api_global_chat(payload: GlobalChatRequest, background_tasks: BackgroundTask
                 context_parts.append(f"--- {agent['name']} ---\n{sr.context}")
         combined_context = "\n\n".join(context_parts)
 
-    # Also try cross-book RAG for ready agents (supplements skill results)
+    # Cross-book RAG: search selected books, or ALL ready books if none selected
     ready_ids = [a["id"] for a in target_agents if a["status"] == "ready"]
     rag_context = ""
     rag_chunks: list[dict[str, Any]] = []
-    if ready_ids:
-        try:
+    try:
+        if ready_ids:
             rag_chunks = retrieve_cross_book(payload.message, payload.top_k, agent_ids=ready_ids)
-            rag_context = build_context(rag_chunks) if rag_chunks else ""
-        except ProviderError:
-            pass
+        elif not target_agents:
+            # No books selected — search the entire library
+            rag_chunks = retrieve_cross_book(payload.message, payload.top_k)
+        if rag_chunks:
+            rag_context = build_context(rag_chunks)
+    except ProviderError:
+        pass
 
     # Merge contexts
     if rag_context and combined_context:

@@ -211,6 +211,8 @@ function appendMsg(container, role, text, sources, opts) {
   const el = document.createElement('div');
   el.className = 'chat-message ' + role;
   el.dataset.raw = text;
+  if (sources?.length) el.dataset.sources = JSON.stringify(sources);
+  if (opts && Object.keys(opts).length) el.dataset.opts = JSON.stringify(opts);
   const webSrcs = opts?.webSources || [];
   const refs = opts?.references || [];
   if (role === 'assistant') {
@@ -354,7 +356,10 @@ function saveCurrentSession() {
   const msgs = [];
   document.querySelectorAll('#chat-messages .chat-message').forEach(el => {
     const role = el.classList.contains('user') ? 'user' : 'assistant';
-    msgs.push({ role, content: el.dataset.raw || el.textContent });
+    const msg = { role, content: el.dataset.raw || el.textContent };
+    if (el.dataset.sources) try { msg.sources = JSON.parse(el.dataset.sources); } catch {}
+    if (el.dataset.opts) try { msg.opts = JSON.parse(el.dataset.opts); } catch {}
+    msgs.push(msg);
   });
   session.messages = msgs;
   session.books = new Map(selectedBooks);
@@ -369,10 +374,10 @@ function switchToSession(id) {
   selectedBooks = new Map(session.books);
   const chatBox = document.getElementById('chat-messages');
   chatBox.innerHTML = '';
-  session.messages.forEach(m => appendMsg(chatBox, m.role, m.content));
+  session.messages.forEach(m => appendMsg(chatBox, m.role, m.content, m.sources, m.opts));
   persistSessions();
   renderSelectedChips();
-  hideChatRightSidebar();
+  restoreChatSidebar(session.messages);
   renderChatHistory();
   if (getRoute().page !== 'chat') {
     window.location.hash = '#/chat';
@@ -528,7 +533,8 @@ function onChatPageShow() {
   if (currentSessionId && !chatBox.children.length) {
     const session = chatSessions.find(s => s.id === currentSessionId);
     if (session?.messages?.length) {
-      session.messages.forEach(m => appendMsg(chatBox, m.role, m.content));
+      session.messages.forEach(m => appendMsg(chatBox, m.role, m.content, m.sources, m.opts));
+      restoreChatSidebar(session.messages);
     }
   }
   if (pendingHomeMessage) {
@@ -574,6 +580,23 @@ function renderChatSidebar(sources, query) {
         .slice(0, 4)
     : [];
   relEl.innerHTML = related.length ? related.map(b => sidebarBookItem(b.agentId || b.id, b.title, b.author, b.isbn)).join('') : '';
+}
+
+function restoreChatSidebar(messages) {
+  // Find the last assistant message that has sources
+  let lastSources = null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'assistant' && messages[i].sources?.length) {
+      lastSources = messages[i].sources;
+      break;
+    }
+  }
+  if (lastSources) {
+    renderChatSidebar(lastSources, '');
+    showChatRightSidebar();
+  } else {
+    hideChatRightSidebar();
+  }
 }
 
 function sidebarBookItem(id, title, author, isbn) {
