@@ -16,7 +16,7 @@ DB_PATH = Path(os.getenv("DB_PATH", DATA_DIR / "chatbook.db"))
 APP_NAME = os.getenv("APP_NAME", "Feynman")
 APP_TITLE = os.getenv("APP_TITLE", "Feynman")
 
-PROVIDER_ORDER = [p.strip().lower() for p in os.getenv("PROVIDER_ORDER", "gemini,openai,kimi").split(",") if p.strip()]
+PROVIDER_ORDER = [p.strip().lower() for p in os.getenv("PROVIDER_ORDER", "gemini,deepseek,openai,kimi,anthropic").split(",") if p.strip()]
 
 CHAT_PROVIDER = os.getenv("CHAT_PROVIDER", "auto").lower()
 EMBED_PROVIDER = os.getenv("EMBED_PROVIDER", "auto").lower()
@@ -35,6 +35,14 @@ KIMI_API_KEY = os.getenv("KIMI_API_KEY", "")
 KIMI_BASE_URL = os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
 KIMI_CHAT_MODEL = os.getenv("KIMI_CHAT_MODEL", "moonshot-v1-8k")
 KIMI_EMBED_MODEL = os.getenv("KIMI_EMBED_MODEL", "")
+
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+DEEPSEEK_CHAT_MODEL = os.getenv("DEEPSEEK_CHAT_MODEL", "deepseek-chat")
+
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+ANTHROPIC_CHAT_MODEL = os.getenv("ANTHROPIC_CHAT_MODEL", "claude-sonnet-4-5-20250929")
 
 MAX_CHUNK_CHARS = int(os.getenv("MAX_CHUNK_CHARS", "1200"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "120"))

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Feynman</title>
-    <link rel="stylesheet" href="/static/styles.css?v=9" />
+    <link rel="stylesheet" href="/static/styles.css?v=21" />
   </head>
   <body>
     <div class="app-layout" id="app-layout">
@@ -75,7 +75,7 @@
                 </button>
               </div>
             </div>
-            <p class="home-hint"><a href="#/library" class="hint-link">Browse topics in the library</a> or ask a question to discover books</p>
+            <p class="home-hint"><a href="#/library" id="home-upload-link" class="hint-link" onclick="event.preventDefault(); event.stopPropagation(); togglePopover('home-popover', 'home-popover-book-list', 'home-popover-no-books')">Add one or more books</a> to start a conversation</p>
             <div id="home-upload-status" class="home-status"></div>
           </div>
           <p class="home-quote">"You learn by asking questions, by thinking, and by experimenting." — Richard Feynman</p>
@@ -127,15 +127,15 @@
         <div id="page-library" class="page-view library-page hidden">
           <div class="library-content">
             <h1 class="page-title">Library</h1>
-            <div class="topic-tags-grid" id="topic-tags-grid"></div>
             <div class="library-toolbar">
               <input type="text" id="library-search" placeholder="Search books..." autocomplete="off" />
               <div class="filter-tags">
                 <button class="filter-tag active" data-filter="all">All</button>
-                <button class="filter-tag" data-filter="available">Available</button>
+                <button class="filter-tag" data-filter="available">Ready</button>
                 <button class="filter-tag" data-filter="popular">Popular</button>
               </div>
             </div>
+            <div class="topic-tags-grid" id="topic-tags-grid"></div>
             <div id="library-grid" class="book-grid"></div>
           </div>
         </div>
@@ -188,6 +188,6 @@
       </div><!-- .app-main -->
     </div><!-- .app-layout -->
 
-    <script src="/static/app.js?v=9"></script>
+    <script src="/static/app.js?v=21"></script>
   </body>
 </html>

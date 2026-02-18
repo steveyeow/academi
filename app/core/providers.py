@@ -13,10 +13,18 @@ class ProviderError(RuntimeError):
 
 
 @dataclass
+class TokenUsage:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+
+@dataclass
 class ChatResult:
     content: str
     raw: dict[str, Any]
     grounding: list[dict[str, str]] | None = None  # [{title, url, snippet}]
+    usage: TokenUsage | None = None
 
 
 class BaseProvider:
@@ -87,7 +95,15 @@ class OpenAICompatibleProvider(BaseProvider):
         }
         data = self._post("/chat/completions", payload)
         content = data["choices"][0]["message"]["content"]
-        return ChatResult(content=content, raw=data)
+        usage = None
+        if "usage" in data:
+            u = data["usage"]
+            usage = TokenUsage(
+                input_tokens=u.get("prompt_tokens", 0),
+                output_tokens=u.get("completion_tokens", 0),
+                total_tokens=u.get("total_tokens", 0),
+            )
+        return ChatResult(content=content, raw=data, usage=usage)
 
 
 class GeminiProvider(BaseProvider):
@@ -175,7 +191,16 @@ class GeminiProvider(BaseProvider):
                         "url": web["uri"],
                     })
 
-        return ChatResult(content=text, raw=data, grounding=grounding)
+        usage = None
+        usage_meta = data.get("usageMetadata")
+        if usage_meta:
+            usage = TokenUsage(
+                input_tokens=usage_meta.get("promptTokenCount", 0),
+                output_tokens=usage_meta.get("candidatesTokenCount", 0),
+                total_tokens=usage_meta.get("totalTokenCount", 0),
+            )
+
+        return ChatResult(content=text, raw=data, grounding=grounding, usage=usage)
 
 
 def _openai_provider() -> OpenAICompatibleProvider:
@@ -198,6 +223,68 @@ def _kimi_provider() -> OpenAICompatibleProvider:
     )
 
 
+def _deepseek_provider() -> OpenAICompatibleProvider:
+    return OpenAICompatibleProvider(
+        name="deepseek",
+        api_key=config.DEEPSEEK_API_KEY,
+        base_url=config.DEEPSEEK_BASE_URL,
+        chat_model=config.DEEPSEEK_CHAT_MODEL,
+    )
+
+
+class AnthropicProvider(BaseProvider):
+    name = "anthropic"
+
+    def __init__(self, api_key: str, base_url: str, chat_model: str):
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.chat_model = chat_model
+
+    def has_key(self) -> bool:
+        return bool(self.api_key)
+
+    def chat(self, system: str, user: str, history: list[dict[str, str]] | None = None, use_grounding: bool = False) -> ChatResult:
+        messages: list[dict[str, Any]] = []
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": user})
+        payload: dict[str, Any] = {
+            "model": self.chat_model,
+            "max_tokens": 4096,
+            "messages": messages,
+        }
+        if system:
+            payload["system"] = system
+        headers = {
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+        with httpx.Client(timeout=60) as client:
+            resp = client.post(f"{self.base_url}/v1/messages", headers=headers, json=payload)
+        if resp.status_code >= 400:
+            raise ProviderError(f"anthropic error {resp.status_code}: {resp.text}")
+        data = resp.json()
+        content = "".join(b.get("text", "") for b in data.get("content", []))
+        usage = None
+        if "usage" in data:
+            u = data["usage"]
+            usage = TokenUsage(
+                input_tokens=u.get("input_tokens", 0),
+                output_tokens=u.get("output_tokens", 0),
+                total_tokens=u.get("input_tokens", 0) + u.get("output_tokens", 0),
+            )
+        return ChatResult(content=content, raw=data, usage=usage)
+
+
+def _anthropic_provider() -> AnthropicProvider:
+    return AnthropicProvider(
+        api_key=config.ANTHROPIC_API_KEY,
+        base_url=config.ANTHROPIC_BASE_URL,
+        chat_model=config.ANTHROPIC_CHAT_MODEL,
+    )
+
+
 def _gemini_provider() -> GeminiProvider:
     return GeminiProvider(
         api_key=config.GEMINI_API_KEY,
@@ -215,6 +302,10 @@ def get_provider(name: str) -> BaseProvider:
         return _gemini_provider()
     if name == "kimi":
         return _kimi_provider()
+    if name == "deepseek":
+        return _deepseek_provider()
+    if name == "anthropic":
+        return _anthropic_provider()
     raise ProviderError(f"Unknown provider: {name}")
 
 
@@ -238,3 +329,29 @@ def pick_provider(kind: str) -> BaseProvider:
         return provider
 
     raise ProviderError(f"No available provider for {kind}")
+
+
+def chat_with_fallback(
+    system: str,
+    user: str,
+    history: list[dict[str, str]] | None = None,
+    use_grounding: bool = False,
+) -> tuple[ChatResult, BaseProvider]:
+    """Try each provider in order until one succeeds. Returns (result, provider)."""
+    errors: list[str] = []
+    for name in config.PROVIDER_ORDER:
+        provider = get_provider(name)
+        if not provider.has_key():
+            continue
+        try:
+            result = provider.chat(
+                system=system,
+                user=user,
+                history=history,
+                use_grounding=use_grounding and isinstance(provider, GeminiProvider),
+            )
+            return result, provider
+        except Exception as exc:
+            errors.append(f"{name}: {exc}")
+            continue
+    raise ProviderError("All providers failed: " + "; ".join(errors))

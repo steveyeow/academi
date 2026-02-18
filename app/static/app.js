@@ -15,10 +15,9 @@ let chatSessions = [];
 let currentSessionId = null;
 let sessionCounter = 0;
 
-// Topic discovery state
+// Topic state
 let topicTags = [];
-let selectedTopics = new Set(JSON.parse(localStorage.getItem('selectedTopics') || '[]'));
-let discoveredTopics = new Set(JSON.parse(localStorage.getItem('discoveredTopics') || '[]'));
+let activeTopics = new Set();   // currently selected as filters
 let loadingTopics = new Set();
 
 const MOCK_QUESTIONS = [
@@ -105,14 +104,12 @@ function renderTopicTags() {
   if (!grid || !topicTags.length) return;
   grid.innerHTML = topicTags.map(topic => {
     const isLoading = loadingTopics.has(topic);
-    const isDiscovered = discoveredTopics.has(topic);
-    const isSelected = selectedTopics.has(topic);
+    const isActive = activeTopics.has(topic);
     let cls = 'topic-tag';
     if (isLoading) cls += ' loading';
-    else if (isSelected || isDiscovered) cls += ' discovered';
-    const check = isDiscovered ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>' : '';
-    const spinner = isLoading ? '<span class="loading-dot" style="margin-right:4px;font-size:11px">...</span>' : '';
-    return `<button class="${cls}" data-topic="${esc(topic)}">${spinner}${check}${esc(topic)}</button>`;
+    else if (isActive) cls += ' active';
+    const spinner = isLoading ? '<span class="loading-dot" style="margin-right:5px;font-size:11px">...</span>' : '';
+    return `<button class="${cls}" data-topic="${esc(topic)}">${spinner}${esc(topic)}</button>`;
   }).join('');
   grid.querySelectorAll('.topic-tag').forEach(btn => {
     btn.addEventListener('click', () => handleTopicClick(btn.dataset.topic));
@@ -122,36 +119,42 @@ function renderTopicTags() {
 async function handleTopicClick(topic) {
   if (loadingTopics.has(topic)) return;
 
-  if (discoveredTopics.has(topic)) {
-    // Already discovered — toggle selection (visual only)
-    if (selectedTopics.has(topic)) selectedTopics.delete(topic);
-    else selectedTopics.add(topic);
-    localStorage.setItem('selectedTopics', JSON.stringify([...selectedTopics]));
+  // Toggle filter
+  if (activeTopics.has(topic)) {
+    activeTopics.delete(topic);
     renderTopicTags();
+    renderLibraryGrid();
     return;
   }
 
-  // Discover books for this topic
-  selectedTopics.add(topic);
-  loadingTopics.add(topic);
+  activeTopics.add(topic);
   renderTopicTags();
 
+  // Check if any books exist for this topic
+  const hasBooks = allBooks.some(b => (b.category || '').toLowerCase() === topic.toLowerCase());
+  if (hasBooks) {
+    renderLibraryGrid();
+    return;
+  }
+
+  // No books yet — discover them
+  loadingTopics.add(topic);
+  renderTopicTags();
   try {
-    await api('/api/discover', {
+    const data = await api('/api/discover', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ topic }),
     });
-    discoveredTopics.add(topic);
-    localStorage.setItem('discoveredTopics', JSON.stringify([...discoveredTopics]));
+    _searchUsage = data.usage?.total_tokens > 0 ? data.usage : null;
     await loadAgents();
-    renderLibraryGrid();
   } catch (err) {
-    selectedTopics.delete(topic);
+    activeTopics.delete(topic);
+    alert('Discovery failed: ' + err.message);
   } finally {
     loadingTopics.delete(topic);
-    localStorage.setItem('selectedTopics', JSON.stringify([...selectedTopics]));
     renderTopicTags();
+    renderLibraryGrid();
   }
 }
 
@@ -207,7 +210,34 @@ function renderHome() {
 function appendMsg(container, role, text, sources, opts) {
   const el = document.createElement('div');
   el.className = 'chat-message ' + role;
-  el.textContent = text;
+  el.dataset.raw = text;
+  const webSrcs = opts?.webSources || [];
+  const refs = opts?.references || [];
+  if (role === 'assistant') {
+    const content = document.createElement('div');
+    content.className = 'msg-content';
+    let html = renderMarkdown(text);
+    // Convert [1], [2], [1, 2] etc. to clickable citation superscripts
+    if (refs.length || webSrcs.length) {
+      html = html.replace(/\[(\d+(?:\s*,\s*\d+)*)\]/g, (match, nums) => {
+        const indices = nums.split(/\s*,\s*/).map(n => parseInt(n, 10));
+        const links = indices.map(num => {
+          const idx = num - 1;
+          if (refs.length && idx >= 0 && idx < refs.length) {
+            return `<a class="cite-link" href="#ref-${num}" title="${esc(refs[idx].book + ': ' + refs[idx].snippet.slice(0, 60))}"><sup>${num}</sup></a>`;
+          } else if (webSrcs.length && idx >= 0 && idx < webSrcs.length) {
+            return `<a class="cite-link" href="${esc(webSrcs[idx].url)}" target="_blank" rel="noopener" title="${esc(webSrcs[idx].title || '')}"><sup>${num}</sup></a>`;
+          }
+          return `<sup>${num}</sup>`;
+        });
+        return `<span class="cite-group">[${links.join(', ')}]</span>`;
+      });
+    }
+    content.innerHTML = html;
+    el.appendChild(content);
+  } else {
+    el.textContent = text;
+  }
   if (sources?.length) {
     const t = document.createElement('div');
     t.className = 'source-tags';
@@ -220,23 +250,27 @@ function appendMsg(container, role, text, sources, opts) {
     });
     el.appendChild(t);
   }
+  // References (RAG chunk sources)
+  if (refs.length) {
+    const refsEl = document.createElement('div');
+    refsEl.className = 'msg-references';
+    refsEl.innerHTML = '<div class="refs-header">References</div>' +
+      refs.map(r =>
+        `<div class="ref-item" id="ref-${r.index}"><span class="ref-num">${r.index}</span><div class="ref-body"><span class="ref-book">${esc(r.book)}</span><span class="ref-snippet">${esc(r.snippet)}</span></div></div>`
+      ).join('');
+    el.appendChild(refsEl);
+  }
   // Web sources (grounding citations)
-  if (opts?.webSources?.length) {
+  if (webSrcs.length) {
     const ws = document.createElement('div');
     ws.className = 'web-sources';
-    if (opts.grounded) {
-      const badge = document.createElement('span');
-      badge.className = 'web-search-badge';
-      badge.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Searched the web';
-      ws.appendChild(badge);
-    }
-    opts.webSources.forEach(src => {
+    webSrcs.forEach((src, i) => {
       const a = document.createElement('a');
       a.className = 'web-source-link';
       a.href = src.url;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
-      a.textContent = src.title || src.url;
+      a.innerHTML = `<span class="web-source-num">${i + 1}</span> ${esc(src.title || src.url)}`;
       ws.appendChild(a);
     });
     el.appendChild(ws);
@@ -248,6 +282,15 @@ function appendMsg(container, role, text, sources, opts) {
     const labels = { rag: 'RAG', content_fetch: 'Web APIs', web_search: 'Web Search', llm_knowledge: 'LLM Knowledge' };
     sb.textContent = labels[opts.skillUsed] || opts.skillUsed;
     el.appendChild(sb);
+  }
+  // Token usage
+  if (opts?.usage && opts.usage.total_tokens > 0) {
+    const u = opts.usage;
+    const tu = document.createElement('div');
+    tu.className = 'token-usage';
+    tu.textContent = `${u.total_tokens} tokens`;
+    tu.title = `Input: ${u.input_tokens} · Output: ${u.output_tokens}`;
+    el.appendChild(tu);
   }
   container.appendChild(el);
   container.scrollTop = container.scrollHeight;
@@ -264,6 +307,33 @@ function showLoading(c) {
 function removeLoading() { document.getElementById('loading-msg')?.remove(); }
 
 // ─── Chat sessions ───
+function persistSessions() {
+  saveCurrentSession();
+  try {
+    const data = chatSessions.map(s => ({
+      id: s.id, title: s.title, messages: s.messages,
+      books: s.books instanceof Map ? [...s.books.entries()] : [],
+    }));
+    localStorage.setItem('chatSessions', JSON.stringify(data));
+    localStorage.setItem('sessionCounter', String(sessionCounter));
+    localStorage.setItem('currentSessionId', currentSessionId || '');
+  } catch {}
+}
+
+function restoreSessions() {
+  try {
+    const raw = localStorage.getItem('chatSessions');
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    chatSessions = data.map(s => ({
+      ...s,
+      books: new Map(s.books || []),
+    }));
+    sessionCounter = parseInt(localStorage.getItem('sessionCounter') || '0', 10);
+    currentSessionId = localStorage.getItem('currentSessionId') || null;
+  } catch {}
+}
+
 function createSession() {
   saveCurrentSession();
   const id = 's-' + (++sessionCounter);
@@ -273,6 +343,7 @@ function createSession() {
   document.getElementById('chat-messages').innerHTML = '';
   hideChatRightSidebar();
   renderChatHistory();
+  persistSessions();
   return session;
 }
 
@@ -283,7 +354,7 @@ function saveCurrentSession() {
   const msgs = [];
   document.querySelectorAll('#chat-messages .chat-message').forEach(el => {
     const role = el.classList.contains('user') ? 'user' : 'assistant';
-    msgs.push({ role, content: el.textContent });
+    msgs.push({ role, content: el.dataset.raw || el.textContent });
   });
   session.messages = msgs;
   session.books = new Map(selectedBooks);
@@ -299,6 +370,7 @@ function switchToSession(id) {
   const chatBox = document.getElementById('chat-messages');
   chatBox.innerHTML = '';
   session.messages.forEach(m => appendMsg(chatBox, m.role, m.content));
+  persistSessions();
   renderSelectedChips();
   hideChatRightSidebar();
   renderChatHistory();
@@ -412,9 +484,12 @@ async function sendGlobalChat(message) {
     const msgOpts = {};
     if (data.web_sources?.length) msgOpts.webSources = data.web_sources;
     if (data.grounded) msgOpts.grounded = true;
+    if (data.references?.length) msgOpts.references = data.references;
+    if (data.usage) msgOpts.usage = data.usage;
     appendMsg(chatBox, 'assistant', data.answer, sources, msgOpts);
     renderChatSidebar(sources, message);
     showChatRightSidebar();
+    persistSessions();
     // Trigger polling if any catalog books are being learned
     ensurePolling();
   } catch (err) {
@@ -423,6 +498,7 @@ async function sendGlobalChat(message) {
       ? 'No LLM API key configured. Please add GEMINI_API_KEY, OPENAI_API_KEY, or KIMI_API_KEY to your .env file and restart the server.'
       : 'Error: ' + err.message;
     appendMsg(chatBox, 'assistant', msg);
+    persistSessions();
   }
 }
 
@@ -447,6 +523,14 @@ function handleChatSend() {
 function onChatPageShow() {
   renderSelectedChips();
   renderChatHistory();
+  // Restore messages if chat box is empty and we have a current session
+  const chatBox = document.getElementById('chat-messages');
+  if (currentSessionId && !chatBox.children.length) {
+    const session = chatSessions.find(s => s.id === currentSessionId);
+    if (session?.messages?.length) {
+      session.messages.forEach(m => appendMsg(chatBox, m.role, m.content));
+    }
+  }
   if (pendingHomeMessage) {
     const msg = pendingHomeMessage;
     pendingHomeMessage = null;
@@ -470,10 +554,25 @@ function renderChatSidebar(sources, query) {
   }
 
   const relEl = document.getElementById('sidebar-related');
-  const q = (query || '').toLowerCase();
-  const related = allBooks
-    .filter(b => !selectedBooks.has(b.id) && (b.title.toLowerCase().includes(q) || (b.category || '').toLowerCase().includes(q) || (b.description || '').toLowerCase().includes(q)))
-    .slice(0, 4);
+  // Collect IDs to exclude (sources + selected)
+  const excludeIds = new Set(sources.map(s => s.id));
+  for (const [, b] of selectedBooks) excludeIds.add(b.agentId || b.id);
+  // Collect categories from sources + selected books
+  const relCategories = new Set();
+  sources.forEach(s => {
+    const book = allBooks.find(b => b.id === s.id);
+    if (book?.category) relCategories.add(book.category.toLowerCase());
+  });
+  for (const [, b] of selectedBooks) {
+    const book = allBooks.find(x => (x.agentId || x.id) === (b.agentId || b.id));
+    if (book?.category) relCategories.add(book.category.toLowerCase());
+  }
+  // Related = same category, excluding already shown books
+  const related = relCategories.size
+    ? allBooks
+        .filter(b => !excludeIds.has(b.id) && relCategories.has((b.category || '').toLowerCase()))
+        .slice(0, 4)
+    : [];
   relEl.innerHTML = related.length ? related.map(b => sidebarBookItem(b.agentId || b.id, b.title, b.author, b.isbn)).join('') : '';
 }
 
@@ -508,17 +607,110 @@ function renderLibraryGrid() {
   let filtered = [...allBooks];
   if (libraryFilter === 'available') filtered = filtered.filter(b => b.available);
   else if (libraryFilter === 'popular') filtered.sort((a,b) => (b.upvotes||0) - (a.upvotes||0));
+  if (activeTopics.size) {
+    const topics = new Set([...activeTopics].map(t => t.toLowerCase()));
+    filtered = filtered.filter(b => topics.has((b.category || '').toLowerCase()));
+  }
   if (librarySearch) {
     const q = librarySearch.toLowerCase();
-    filtered = filtered.filter(b => b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q) || (b.category||'').toLowerCase().includes(q));
+    filtered = filtered.filter(b =>
+      b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q) ||
+      (b.category||'').toLowerCase().includes(q) || _searchDiscoveredIds.has(b.id)
+    );
   }
   renderBookGrid(c, filtered);
+  // If searching and no results, show searching indicator (only while actively searching)
+  if (librarySearch && librarySearch.length >= 2 && !filtered.length) {
+    if (_searchingQuery) {
+      c.innerHTML = `<div class="search-discover-prompt" id="search-discover-prompt">
+        <span class="loading-dot">Searching for "${esc(librarySearch)}"...</span>
+      </div>`;
+    } else {
+      c.innerHTML = `<div class="search-discover-prompt"><p style="color:var(--text-muted)">No results for "${esc(librarySearch)}"</p></div>`;
+    }
+  }
+  // Show token usage for search/discover inline
+  if (_searchUsage && _searchUsage.total_tokens > 0) {
+    c.insertAdjacentHTML('beforeend',
+      `<div class="token-usage" style="grid-column:1/-1;text-align:center;margin-top:8px" title="Input: ${_searchUsage.input_tokens} · Output: ${_searchUsage.output_tokens}">${_searchUsage.total_tokens} tokens</div>`);
+  }
+  // Show "Discover more" card when topic filters are active
+  if (activeTopics.size && !librarySearch) {
+    const topics = [...activeTopics];
+    const label = topics.length === 1 ? topics[0] : 'these topics';
+    c.insertAdjacentHTML('beforeend',
+      `<div class="book-card discover-more-card" id="discover-more-card">
+        <div class="card-cover-gen" style="background:var(--bg-sidebar)">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </div>
+        <div class="card-body"><h3 class="card-title" style="color:var(--text-muted)">Discover more</h3><p class="card-author">${esc(label)}</p></div>
+      </div>`);
+    document.getElementById('discover-more-card').addEventListener('click', () => discoverMore(topics));
+  }
 }
+
+async function discoverMore(topics) {
+  const card = document.getElementById('discover-more-card');
+  if (card) card.innerHTML = '<div class="card-cover-gen" style="background:var(--bg-sidebar)"><span class="loading-dot">...</span></div><div class="card-body"><h3 class="card-title" style="color:var(--text-muted)">Discovering...</h3></div>';
+  for (const topic of topics) {
+    loadingTopics.add(topic);
+  }
+  renderTopicTags();
+  try {
+    let totalTokens = 0;
+    for (const topic of topics) {
+      const data = await api('/api/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic }),
+      });
+      if (data.usage?.total_tokens) totalTokens += data.usage.total_tokens;
+    }
+    await loadAgents();
+    if (totalTokens > 0) _searchUsage = { total_tokens: totalTokens, input_tokens: 0, output_tokens: 0 };
+  } catch (err) {
+    alert('Discovery failed: ' + err.message);
+  }
+  for (const topic of topics) loadingTopics.delete(topic);
+  renderTopicTags();
+  renderLibraryGrid();
+}
+
+let _searchingQuery = null;
+let _searchDiscoveredIds = new Set();
+let _searchUsage = null;
+async function autoSearchBook(query) {
+  if (_searchingQuery === query) return;
+  _searchingQuery = query;
+  try {
+    const data = await api('/api/search-book', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ query }),
+    });
+    if (_searchingQuery !== query) return; // user typed something else
+    // Track discovered book IDs so they show even if title doesn't match search text
+    (data.books || []).forEach(b => { if (b.id) _searchDiscoveredIds.add(b.id); });
+    _searchUsage = data.usage?.total_tokens > 0 ? data.usage : null;
+    await loadAgents();
+    buildBookList();
+    renderLibraryGrid();
+  } catch (err) {
+    if (_searchingQuery !== query) return;
+    const c = document.getElementById('search-discover-prompt');
+    if (c) c.innerHTML = `<p style="color:var(--text-muted)">Could not find "${esc(query)}"</p>`;
+  } finally {
+    if (_searchingQuery === query) _searchingQuery = null;
+  }
+}
+
+const COVER_COLORS = ['#264653','#2a9d8f','#e76f51','#457b9d','#6d597a','#355070','#b56576','#0077b6','#588157','#9b2226'];
+function coverColor(title) { let h = 0; for (let i = 0; i < title.length; i++) h = ((h << 5) - h + title.charCodeAt(i)) | 0; return COVER_COLORS[Math.abs(h) % COVER_COLORS.length]; }
+function coverInitials(title) { return title.split(/[\s:—]+/).filter(w => w.length > 2).slice(0, 2).map(w => w[0].toUpperCase()).join(''); }
 
 function renderBookGrid(container, books) {
   if (!books.length) { container.innerHTML = '<div class="empty-state"><p>No books found.</p></div>'; return; }
   container.innerHTML = books.map(b => {
-    const cover = b.isbn ? `<img class="card-cover" src="https://covers.openlibrary.org/b/isbn/${b.isbn}-M.jpg" alt="${esc(b.title)}" loading="lazy" onerror="this.outerHTML='<div class=\\'card-cover-placeholder\\'>&#128218;</div>'" />` : '<div class="card-cover-placeholder">&#128218;</div>';
+    const cover = `<div class="card-cover-gen" style="background:${coverColor(b.title)}"><span>${coverInitials(b.title)}</span></div>`;
     let statusBadge = '';
     if (b.status === 'indexing') statusBadge = '<span class="card-badge indexing">Indexing...</span>';
     else if (b.status === 'catalog') statusBadge = '<span class="card-badge catalog">Catalog</span>';
@@ -620,6 +812,8 @@ async function sendBookChat(bookId, message) {
     if (data.skill_used) msgOpts.skillUsed = data.skill_used;
     if (data.web_sources?.length) msgOpts.webSources = data.web_sources;
     if (data.grounded) msgOpts.grounded = true;
+    if (data.references?.length) msgOpts.references = data.references;
+    if (data.usage) msgOpts.usage = data.usage;
     appendMsg(chatBox, 'assistant', data.answer, null, msgOpts);
     // Start polling if the agent started learning
     ensurePolling();
@@ -789,10 +983,75 @@ function bindEnterSend(textarea, handler) {
 // ─── Utility ───
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'token-toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { t.classList.add('fade-out'); setTimeout(() => t.remove(), 400); }, 2000);
+}
+
+function renderMarkdown(text) {
+  if (!text) return '';
+  // Protect code blocks first
+  const codeBlocks = [];
+  let s = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    codeBlocks.push('<pre><code>' + esc(code) + '</code></pre>');
+    return '\x00CB' + (codeBlocks.length - 1) + '\x00';
+  });
+  // Protect inline code
+  const inlineCodes = [];
+  s = s.replace(/`([^`]+)`/g, (_, code) => {
+    inlineCodes.push('<code>' + esc(code) + '</code>');
+    return '\x00IC' + (inlineCodes.length - 1) + '\x00';
+  });
+  // Process line by line
+  const lines = s.split('\n');
+  const out = [];
+  let inList = false;
+  for (let line of lines) {
+    let trimmed = line.trim();
+    // Headers
+    if (trimmed.startsWith('### ')) { if (inList) { out.push('</ul>'); inList = false; } out.push('<h4>' + inline(trimmed.slice(4)) + '</h4>'); continue; }
+    if (trimmed.startsWith('## ')) { if (inList) { out.push('</ul>'); inList = false; } out.push('<h3>' + inline(trimmed.slice(3)) + '</h3>'); continue; }
+    if (trimmed.startsWith('# ')) { if (inList) { out.push('</ul>'); inList = false; } out.push('<h2>' + inline(trimmed.slice(2)) + '</h2>'); continue; }
+    // Unordered list
+    const ulMatch = trimmed.match(/^[-*]\s+(.+)$/);
+    if (ulMatch) { if (!inList) { out.push('<ul>'); inList = true; } out.push('<li>' + inline(ulMatch[1]) + '</li>'); continue; }
+    // Ordered list
+    const olMatch = trimmed.match(/^\d+[.)]\s+(.+)$/);
+    if (olMatch) { if (!inList) { out.push('<ul>'); inList = true; } out.push('<li>' + inline(olMatch[1]) + '</li>'); continue; }
+    // Close list if needed
+    if (inList) { out.push('</ul>'); inList = false; }
+    // Code block placeholder
+    if (trimmed.startsWith('\x00CB')) { out.push(trimmed); continue; }
+    // Empty line = paragraph break
+    if (!trimmed) { out.push('<br>'); continue; }
+    // Normal text
+    out.push('<p>' + inline(trimmed) + '</p>');
+  }
+  if (inList) out.push('</ul>');
+  let html = out.join('\n');
+  // Restore code blocks and inline code
+  html = html.replace(/\x00CB(\d+)\x00/g, (_, i) => codeBlocks[+i]);
+  html = html.replace(/\x00IC(\d+)\x00/g, (_, i) => inlineCodes[+i]);
+  return html;
+
+  function inline(t) {
+    t = esc(t);
+    t = t.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    t = t.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    t = t.replace(/\x00IC(\d+)\x00/g, (_, i) => inlineCodes[+i]);
+    return t;
+  }
+}
+
 // ─── Init ───
 async function init() {
   await Promise.all([loadAgents(), loadVotes(), loadTopics()]);
   buildBookList();
+  restoreSessions();
 
   document.getElementById('app-layout').classList.add('sidebar-collapsed');
 
@@ -831,6 +1090,7 @@ async function init() {
   uploadBtn.addEventListener('click', e => { e.stopPropagation(); togglePopover('home-popover', 'home-popover-book-list', 'home-popover-no-books'); });
   document.getElementById('home-popover-upload').addEventListener('click', () => { closeAllPopovers(); uploadInput.click(); });
   uploadInput.addEventListener('change', () => { if (uploadInput.files.length) { handleFileUpload(uploadInput.files, 'home-upload-status'); uploadInput.value = ''; } });
+  document.getElementById('home-upload-link').addEventListener('click', e => { e.preventDefault(); togglePopover('home-popover', 'home-popover-book-list', 'home-popover-no-books'); });
 
   // Chat page composer
   const chatInput = document.getElementById('chat-input');
@@ -865,7 +1125,22 @@ async function init() {
   });
 
   // Library controls
-  document.getElementById('library-search').addEventListener('input', e => { librarySearch = e.target.value; renderLibraryGrid(); });
+  let searchTimer = null;
+  document.getElementById('library-search').addEventListener('input', e => {
+    librarySearch = e.target.value.trim();
+    _searchDiscoveredIds.clear();
+    _searchUsage = null;
+    renderLibraryGrid();
+    clearTimeout(searchTimer);
+    if (librarySearch.length >= 2) {
+      // Check if local results are empty
+      const q = librarySearch.toLowerCase();
+      const hasLocal = allBooks.some(b => b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q));
+      if (!hasLocal) {
+        searchTimer = setTimeout(() => autoSearchBook(librarySearch), 600);
+      }
+    }
+  });
   document.querySelectorAll('.filter-tag').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.filter-tag').forEach(b => b.classList.remove('active'));

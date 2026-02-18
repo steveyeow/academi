@@ -88,5 +88,7 @@ def retrieve_cross_book(query: str, top_k: int | None = None, agent_ids: list[st
 def build_context(chunks: list[dict[str, Any]]) -> str:
     lines = []
     for idx, chunk in enumerate(chunks, start=1):
-        lines.append(f"[{idx}] {chunk['text']}")
+        source = chunk.get("agent_name", "")
+        label = f"[{idx}] (from \"{source}\")" if source else f"[{idx}]"
+        lines.append(f"{label} {chunk['text']}")
     return "\n\n".join(lines)

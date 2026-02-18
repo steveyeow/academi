@@ -40,7 +40,7 @@ from .core.db import (
     upvote,
 )
 from .core.indexer import index_text
-from .core.providers import GeminiProvider, ProviderError, pick_provider
+from .core.providers import GeminiProvider, ProviderError, chat_with_fallback, pick_provider
 from .core.rag import build_context, retrieve, retrieve_cross_book
 from .core.skills import resolve_multi_agent, resolve_skills
 from .core.sources import fetch_book_content, fetch_wikipedia_summary
@@ -60,6 +60,34 @@ app.add_middleware(
 
 static_dir = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+
+_VERBOSE_CITE_RE = re.compile(
+    r"\[(?:Google [\w\s]+?|Context|Source|Sources|Ref|Reference)\s*((?:\d+(?:\s*,\s*)?)+)\]"
+)
+
+
+def _normalize_citations(text: str) -> str:
+    """Normalize verbose citations like [Context 1, 2] to clean [1, 2] format.
+    Pure [1, 2] citations are kept as-is for frontend rendering."""
+    def _replace(m):
+        nums = m.group(1).strip()
+        return f"[{nums}]"
+    return _VERBOSE_CITE_RE.sub(_replace, text)
+
+
+_TOKEN_MARKUP = 2  # Display multiplier for profit margin
+
+
+def _usage_dict(result) -> dict[str, int]:
+    """Extract token usage from ChatResult, apply display multiplier."""
+    if result.usage:
+        return {
+            "input_tokens": result.usage.input_tokens * _TOKEN_MARKUP,
+            "output_tokens": result.usage.output_tokens * _TOKEN_MARKUP,
+            "total_tokens": result.usage.total_tokens * _TOKEN_MARKUP,
+        }
+    return {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
 
 
 class TopicAgentRequest(BaseModel):
@@ -135,16 +163,16 @@ def _learn_agent(agent_id: str) -> None:
 
 # ─── Scheduled discovery ───
 
-def _discover_books_for_topic(topic: str, count: int = TOPIC_DISCOVER_COUNT) -> list[dict[str, Any]]:
-    """Use LLM to discover top books for a topic. Returns list of {id, title, author, created}."""
+def _discover_books_for_topic(topic: str, count: int = TOPIC_DISCOVER_COUNT) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Use LLM to discover top books for a topic. Returns (books, usage)."""
     prompt = (
         f"Recommend exactly {count} must-read books on the topic \"{topic}\". "
         "Return a JSON array of objects with keys: title, author, description (one sentence). "
         "Only output the JSON array, no other text."
     )
     try:
-        provider = pick_provider("chat")
-        result = provider.chat(system="You are a book recommendation expert.", user=prompt)
+        result, _ = chat_with_fallback(system="You are a book recommendation expert.", user=prompt)
+        usage = _usage_dict(result)
         text = result.content.strip()
         # Strip markdown code fences if present
         if text.startswith("```"):
@@ -154,7 +182,7 @@ def _discover_books_for_topic(topic: str, count: int = TOPIC_DISCOVER_COUNT) -> 
         books_data = json.loads(text)
     except Exception as exc:
         log.warning("LLM discovery for topic '%s' failed: %s", topic, exc)
-        return []
+        raise
 
     results: list[dict[str, Any]] = []
     for entry in books_data[:count]:
@@ -170,7 +198,7 @@ def _discover_books_for_topic(topic: str, count: int = TOPIC_DISCOVER_COUNT) -> 
         created = existing is not None and existing["id"] == agent_id
         results.append({"id": agent_id, "title": title, "author": author, "created": created})
         log.info("Discovered book: %s by %s [%s]", title, author, topic)
-    return results
+    return results, usage
 
 
 def _discover_books() -> None:
@@ -193,7 +221,7 @@ def _discover_books() -> None:
         for cat, _ in sorted_cats:
             if created >= DISCOVERY_BATCH_SIZE:
                 break
-            new_books = _discover_books_for_topic(cat, count=DISCOVERY_BATCH_SIZE - created)
+            new_books, _ = _discover_books_for_topic(cat, count=DISCOVERY_BATCH_SIZE - created)
             created += len(new_books)
 
         if created:
@@ -292,15 +320,67 @@ class DiscoverRequest(BaseModel):
     count: int = Field(default=TOPIC_DISCOVER_COUNT, ge=1, le=10)
 
 
+class SearchBookRequest(BaseModel):
+    query: str = Field(..., min_length=2)
+
+
 @app.post("/api/discover")
 def api_discover(payload: DiscoverRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
-    books = _discover_books_for_topic(payload.topic.strip(), count=payload.count)
+    try:
+        books, usage = _discover_books_for_topic(payload.topic.strip(), count=payload.count)
+    except ProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Discovery failed: {exc}")
     # Trigger background learning for each new agent
     for book in books:
         agent = get_agent(book["id"])
         if agent and agent["status"] == "catalog":
             background_tasks.add_task(_learn_agent, book["id"])
-    return {"topic": payload.topic.strip(), "books": books}
+    return {"topic": payload.topic.strip(), "books": books, "usage": usage}
+
+
+@app.post("/api/search-book")
+def api_search_book(payload: SearchBookRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    """Search for a specific book by name. Uses LLM to identify the book and add it."""
+    query = payload.query.strip()
+    # Check if already exists
+    existing = find_agent_by_name(query)
+    if existing:
+        return {"books": [{"id": existing["id"], "title": existing["name"], "author": existing.get("source", ""), "existing": True}], "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}}
+
+    prompt = (
+        f'The user is searching for a book: "{query}". '
+        "Identify the most likely book they mean. Return a JSON array with exactly 1 object "
+        "containing keys: title (full correct title), author, category (broad academic topic), "
+        "description (one sentence). Only output the JSON array, no other text."
+    )
+    try:
+        result, _ = chat_with_fallback(system="You are a book identification expert.", user=prompt)
+        text = result.content.strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```\w*\n?", "", text)
+            text = re.sub(r"\n?```$", "", text)
+        books_data = json.loads(text)
+    except ProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Search failed: {exc}")
+
+    results = []
+    for entry in books_data[:1]:
+        title = entry.get("title", "").strip()
+        author = entry.get("author", "").strip()
+        category = entry.get("category", "").strip()
+        desc = entry.get("description", "").strip()
+        if not title:
+            continue
+        agent_id = create_catalog_agent(title=title, author=author, category=category, description=desc)
+        results.append({"id": agent_id, "title": title, "author": author, "existing": False})
+        agent = get_agent(agent_id)
+        if agent and agent["status"] == "catalog":
+            background_tasks.add_task(_learn_agent, agent_id)
+    return {"books": results, "usage": _usage_dict(result)}
 
 
 # ─── Agent endpoints ───
@@ -401,7 +481,9 @@ def api_chat(agent_id: str, payload: ChatRequest, background_tasks: BackgroundTa
     system = (
         "You are Feynman, a Socratic study assistant inspired by the Feynman learning method. "
         f"You are helping the user study {book_hint}. "
-        "Answer using the provided context. If the context is insufficient, supplement with your own knowledge. "
+        "Answer using the provided context. When you use information from the context, "
+        "cite it with [N] markers matching the context numbers (e.g. [1], [2]). "
+        "If the context is insufficient, supplement with your own knowledge (no citation needed). "
         "Encourage deeper thinking by occasionally suggesting follow-up questions. "
         "Respond in the same language as the user's question."
     )
@@ -414,9 +496,10 @@ def api_chat(agent_id: str, payload: ChatRequest, background_tasks: BackgroundTa
     history = [{"role": msg["role"], "content": msg["content"]} for msg in list_messages(agent_id, limit=6)]
 
     try:
-        chat_provider = pick_provider("chat")
-        use_grounding = skill_result.use_grounding and isinstance(chat_provider, GeminiProvider)
-        result = chat_provider.chat(system=system, user=user_prompt, history=history, use_grounding=use_grounding)
+        result, chat_provider = chat_with_fallback(
+            system=system, user=user_prompt, history=history,
+            use_grounding=skill_result.use_grounding,
+        )
     except ProviderError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -426,13 +509,28 @@ def api_chat(agent_id: str, payload: ChatRequest, background_tasks: BackgroundTa
     # Process LLM recommendations in background
     background_tasks.add_task(_process_recommendations, result.content)
 
+    # Build references only for chunks actually cited in the response
+    answer_text = _normalize_citations(result.content)
+    cited_nums = set(int(n) for n in re.findall(r"\[(\d+)\]", answer_text))
+    chunks = skill_result.metadata.get("chunks", [])
+    references = []
+    for idx, chunk in enumerate(chunks, start=1):
+        if idx not in cited_nums:
+            continue
+        text = chunk.get("text", "")
+        references.append({
+            "index": idx,
+            "book": agent.get("name", "Unknown"),
+            "snippet": text[:150] + ("..." if len(text) > 150 else ""),
+        })
+
     resp: dict[str, Any] = {
-        "answer": result.content,
+        "answer": answer_text,
         "skill_used": skill_result.skill_name,
+        "references": references,
         "provider": chat_provider.name,
+        "usage": _usage_dict(result),
     }
-    if skill_result.metadata.get("chunks"):
-        resp["chunks"] = skill_result.metadata["chunks"]
     if result.grounding:
         resp["web_sources"] = result.grounding
         resp["grounded"] = True
@@ -520,8 +618,8 @@ def api_global_chat(payload: GlobalChatRequest, background_tasks: BackgroundTask
             "You are Feynman, a Socratic study assistant that helps users learn through questioning. "
             f"{book_focus}"
             "Use the provided context from their books to answer. "
-            "Cite which book the information comes from when relevant. "
-            "If the context is insufficient, supplement with your own knowledge but note what comes from books vs general knowledge. "
+            "When you use information from the context, cite it with [N] markers matching the context numbers (e.g. [1], [2]). "
+            "If the context is insufficient, supplement with your own knowledge (no citation needed). "
             "Encourage deeper thinking by suggesting follow-up questions. "
             "Respond in the same language as the user's question."
         )
@@ -557,11 +655,8 @@ def api_global_chat(payload: GlobalChatRequest, background_tasks: BackgroundTask
         user_prompt = payload.message
 
     try:
-        chat_provider = pick_provider("chat")
-        result = chat_provider.chat(
-            system=system,
-            user=user_prompt,
-            use_grounding=use_grounding and isinstance(chat_provider, GeminiProvider),
+        result, chat_provider = chat_with_fallback(
+            system=system, user=user_prompt, use_grounding=use_grounding,
         )
     except ProviderError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -578,10 +673,26 @@ def api_global_chat(payload: GlobalChatRequest, background_tasks: BackgroundTask
             seen.add(aid)
             sources.append({"agent_id": aid, "agent_name": chunk.get("agent_name", "Unknown")})
 
+    # Build references only for chunks actually cited in the response
+    answer_text = _normalize_citations(result.content)
+    cited_nums = set(int(n) for n in re.findall(r"\[(\d+)\]", answer_text))
+    references = []
+    for idx, chunk in enumerate(rag_chunks, start=1):
+        if idx not in cited_nums:
+            continue
+        text = chunk.get("text", "")
+        references.append({
+            "index": idx,
+            "book": chunk.get("agent_name", "Unknown"),
+            "snippet": text[:150] + ("..." if len(text) > 150 else ""),
+        })
+
     resp: dict[str, Any] = {
-        "answer": result.content,
+        "answer": answer_text,
         "sources": sources,
+        "references": references,
         "provider": chat_provider.name,
+        "usage": _usage_dict(result),
     }
     if result.grounding:
         resp["web_sources"] = result.grounding
