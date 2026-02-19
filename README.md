@@ -1,6 +1,8 @@
 # AcademiAI
 
-**Turn any book into a conversation.** AcademiAI is a Socratic study assistant that lets you chat with books, discover new ones through your interests, and get answers grounded in real content — with traceable citations back to the source.
+Feynman: "You learn by asking questions."
+
+**A chattable library-turn any book into a conversation.** AcademiAI is a Socratic study assistant that lets you chat with books, discover new ones through your interests, and get answers grounded in real content — with traceable citations back to the source.
 
 ## Core Features
 
