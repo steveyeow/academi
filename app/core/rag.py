@@ -89,6 +89,6 @@ def build_context(chunks: list[dict[str, Any]]) -> str:
     lines = []
     for idx, chunk in enumerate(chunks, start=1):
         source = chunk.get("agent_name", "")
-        label = f"[{idx}] (from \"{source}\")" if source else f"[{idx}]"
-        lines.append(f"{label} {chunk['text']}")
+        label = f"[Passage {idx}] (from \"{source}\")" if source else f"[Passage {idx}]"
+        lines.append(f"{label}\n{chunk['text']}")
     return "\n\n".join(lines)

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Feynman</title>
-    <link rel="stylesheet" href="/static/styles.css?v=21" />
+    <link rel="stylesheet" href="/static/styles.css?v=24" />
   </head>
   <body>
     <div class="app-layout" id="app-layout">
@@ -48,8 +48,51 @@
 
         <!-- ─── HOMEPAGE ─── -->
         <div id="page-home" class="page-view home-page">
-          <div class="home-center">
-            <h1 id="greeting" class="greeting"></h1>
+          <!-- Onboarding (first visit only) -->
+          <div id="onboarding" class="home-center onboarding hidden">
+            <div class="greeting-row">
+              <svg class="greeting-logo" width="40" height="40" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+                <rect x="24" y="0" width="8" height="4" fill="#FDCB6E"/>
+                <rect x="26" y="4" width="4" height="4" fill="#B8B8B8"/>
+                <rect x="8" y="8" width="40" height="28" fill="#DA7756"/>
+                <rect x="12" y="12" width="32" height="20" fill="#FFF1E0"/>
+                <rect x="16" y="16" width="8" height="8" fill="#2D3436"/>
+                <rect x="32" y="16" width="8" height="8" fill="#2D3436"/>
+                <rect x="18" y="18" width="4" height="4" fill="#fff"/>
+                <rect x="34" y="18" width="4" height="4" fill="#fff"/>
+                <rect x="22" y="28" width="12" height="2" fill="#C45E3E"/>
+                <rect x="18" y="38" width="4" height="8" fill="#B8B8B8"/>
+                <rect x="34" y="38" width="4" height="8" fill="#B8B8B8"/>
+              </svg>
+              <h1 class="greeting" id="onboarding-greeting"></h1>
+            </div>
+            <p id="onboarding-subtitle" class="onboarding-subtitle"></p>
+            <div id="onboarding-body" class="onboarding-body"></div>
+          </div>
+          <div class="home-center" id="home-center-main">
+            <div class="greeting-row">
+              <svg class="greeting-logo" width="40" height="40" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+                <!-- Antenna -->
+                <rect x="24" y="0" width="8" height="4" fill="#FDCB6E"/>
+                <rect x="26" y="4" width="4" height="4" fill="#B8B8B8"/>
+                <!-- Head -->
+                <rect x="8" y="8" width="40" height="28" fill="#DA7756"/>
+                <!-- Face screen -->
+                <rect x="12" y="12" width="32" height="20" fill="#FFF1E0"/>
+                <!-- Eyes -->
+                <rect x="16" y="16" width="8" height="8" fill="#2D3436"/>
+                <rect x="32" y="16" width="8" height="8" fill="#2D3436"/>
+                <!-- Eye shine -->
+                <rect x="18" y="18" width="4" height="4" fill="#fff"/>
+                <rect x="34" y="18" width="4" height="4" fill="#fff"/>
+                <!-- Mouth -->
+                <rect x="22" y="28" width="12" height="2" fill="#C45E3E"/>
+                <!-- Legs -->
+                <rect x="18" y="38" width="4" height="8" fill="#B8B8B8"/>
+                <rect x="34" y="38" width="4" height="8" fill="#B8B8B8"/>
+              </svg>
+              <h1 id="greeting" class="greeting"></h1>
+            </div>
             <div class="chat-composer">
               <div class="selected-chips" id="home-selected-chips"></div>
               <textarea id="home-input" class="composer-input" rows="1" placeholder="Ask and learn across one or more books..."></textarea>
@@ -143,12 +186,15 @@
         <!-- ─── CHATS PAGE ─── -->
         <div id="page-chats" class="page-view chats-page hidden">
           <div class="chats-content">
-            <div class="chats-header">
-              <input type="text" id="chats-search" class="chats-search" placeholder="Search chats..." autocomplete="off" />
+            <div class="chats-title-row">
+              <h1 class="page-title">Chats</h1>
               <button id="chats-new-btn" class="chats-new-btn" title="New Chat">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 New Chat
               </button>
+            </div>
+            <div class="chats-header">
+              <input type="text" id="chats-search" class="chats-search" placeholder="Search chats..." autocomplete="off" />
             </div>
             <div id="chats-list" class="chats-list"></div>
             <div id="chats-empty" class="chats-empty">No conversations yet</div>
@@ -188,6 +234,6 @@
       </div><!-- .app-main -->
     </div><!-- .app-layout -->
 
-    <script src="/static/app.js?v=21"></script>
+    <script src="/static/app.js?v=24"></script>
   </body>
 </html>

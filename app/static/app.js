@@ -20,6 +20,9 @@ let topicTags = [];
 let activeTopics = new Set();   // currently selected as filters
 let loadingTopics = new Set();
 
+// Onboarding state
+let userName = localStorage.getItem('userName') || '';
+
 const MOCK_QUESTIONS = [
   'What is the central thesis of this book?',
   'How does the author support their main argument?',
@@ -31,9 +34,9 @@ const MOCK_QUESTIONS = [
 // ─── Greeting ───
 function getGreeting() {
   const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
+  let g = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  if (userName) g += ', ' + userName;
+  return g;
 }
 
 // ─── Router ───
@@ -203,7 +206,87 @@ function ensurePolling() {
 
 // ─── Home ───
 function renderHome() {
+  if (!localStorage.getItem('onboardingDone')) {
+    document.getElementById('home-center-main').classList.add('hidden');
+    showOnboarding();
+    return;
+  }
+  document.getElementById('onboarding').classList.add('hidden');
+  document.getElementById('home-center-main').classList.remove('hidden');
   document.getElementById('greeting').textContent = getGreeting();
+}
+
+// ─── Onboarding ───
+function showOnboarding() {
+  const container = document.getElementById('onboarding');
+  const greetingEl = document.getElementById('onboarding-greeting');
+  const subtitleEl = document.getElementById('onboarding-subtitle');
+  const bodyEl = document.getElementById('onboarding-body');
+  container.classList.remove('hidden');
+  showStep1();
+
+  function showStep1() {
+    greetingEl.textContent = "Hi, I'm Feynman";
+    subtitleEl.textContent = 'What should I call you?';
+    bodyEl.innerHTML = `
+      <input type="text" class="onboarding-input" id="onboarding-name-input" placeholder="Your name" autocomplete="off" />
+      <br>
+      <button class="onboarding-btn" id="onboarding-continue-btn">Continue</button>
+    `;
+    const nameInput = document.getElementById('onboarding-name-input');
+    const continueBtn = document.getElementById('onboarding-continue-btn');
+    nameInput.focus();
+    nameInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); proceed(); }
+    });
+    continueBtn.addEventListener('click', proceed);
+
+    function proceed() {
+      const name = nameInput.value.trim();
+      if (!name) return;
+      userName = name;
+      localStorage.setItem('userName', userName);
+      showStep2();
+    }
+  }
+
+  function showStep2() {
+    greetingEl.textContent = 'Nice to meet you, ' + userName + '!';
+    subtitleEl.textContent = 'Pick topics you\u2019re curious about';
+    const selectedTopics = new Set();
+    const tags = topicTags.length ? topicTags : ['Philosophy', 'Science', 'History', 'Psychology', 'Economics', 'Literature', 'Technology', 'Mathematics'];
+    bodyEl.innerHTML = `
+      <div class="onboarding-topics" id="onboarding-topics">
+        ${tags.map(t => `<button class="topic-tag" data-topic="${esc(t)}">${esc(t)}</button>`).join('')}
+      </div>
+      <button class="onboarding-btn" id="onboarding-start-btn">Get Started</button>
+    `;
+    const topicsContainer = document.getElementById('onboarding-topics');
+    topicsContainer.querySelectorAll('.topic-tag').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const topic = btn.dataset.topic;
+        if (selectedTopics.has(topic)) {
+          selectedTopics.delete(topic);
+          btn.classList.remove('selected');
+        } else {
+          selectedTopics.add(topic);
+          btn.classList.add('selected');
+        }
+      });
+    });
+    document.getElementById('onboarding-start-btn').addEventListener('click', () => {
+      localStorage.setItem('onboardingDone', '1');
+      container.classList.add('hidden');
+      document.getElementById('home-center-main').classList.remove('hidden');
+      document.getElementById('greeting').textContent = getGreeting();
+      if (selectedTopics.size) {
+        window.location.hash = '#/library';
+        for (const topic of selectedTopics) {
+          handleTopicClick(topic);
+        }
+      }
+    });
+  }
 }
 
 // ─── Chat messages ───
@@ -226,7 +309,7 @@ function appendMsg(container, role, text, sources, opts) {
         const links = indices.map(num => {
           const idx = num - 1;
           if (refs.length && idx >= 0 && idx < refs.length) {
-            return `<a class="cite-link" href="#ref-${num}" title="${esc(refs[idx].book + ': ' + refs[idx].snippet.slice(0, 60))}"><sup>${num}</sup></a>`;
+            return `<a class="cite-link" data-ref="${num}" href="javascript:void(0)" title="${esc(refs[idx].book + ': ' + refs[idx].snippet.slice(0, 60))}"><sup>${num}</sup></a>`;
           } else if (webSrcs.length && idx >= 0 && idx < webSrcs.length) {
             return `<a class="cite-link" href="${esc(webSrcs[idx].url)}" target="_blank" rel="noopener" title="${esc(webSrcs[idx].title || '')}"><sup>${num}</sup></a>`;
           }
@@ -237,20 +320,16 @@ function appendMsg(container, role, text, sources, opts) {
     }
     content.innerHTML = html;
     el.appendChild(content);
+    // Bind cite-link clicks to scroll to reference
+    content.querySelectorAll('.cite-link[data-ref]').forEach(a => {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        const refEl = el.querySelector('#ref-' + a.dataset.ref);
+        if (refEl) refEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
   } else {
     el.textContent = text;
-  }
-  if (sources?.length) {
-    const t = document.createElement('div');
-    t.className = 'source-tags';
-    sources.forEach(s => {
-      const a = document.createElement('a');
-      a.className = 'source-tag';
-      a.textContent = s.name;
-      a.href = '#/book/' + s.id;
-      t.appendChild(a);
-    });
-    el.appendChild(t);
   }
   // References (RAG chunk sources)
   if (refs.length) {
@@ -315,6 +394,7 @@ function persistSessions() {
     const data = chatSessions.map(s => ({
       id: s.id, title: s.title, messages: s.messages,
       books: s.books instanceof Map ? [...s.books.entries()] : [],
+      updatedAt: s.updatedAt || 0,
     }));
     localStorage.setItem('chatSessions', JSON.stringify(data));
     localStorage.setItem('sessionCounter', String(sessionCounter));
@@ -327,10 +407,14 @@ function restoreSessions() {
     const raw = localStorage.getItem('chatSessions');
     if (!raw) return;
     const data = JSON.parse(raw);
+    // One-time migration: reset polluted updatedAt values
+    const migrated = localStorage.getItem('ts_migrated');
     chatSessions = data.map(s => ({
       ...s,
       books: new Map(s.books || []),
+      updatedAt: migrated ? (s.updatedAt || 0) : 0,
     }));
+    if (!migrated) localStorage.setItem('ts_migrated', '1');
     sessionCounter = parseInt(localStorage.getItem('sessionCounter') || '0', 10);
     currentSessionId = localStorage.getItem('currentSessionId') || null;
   } catch {}
@@ -339,7 +423,7 @@ function restoreSessions() {
 function createSession() {
   saveCurrentSession();
   const id = 's-' + (++sessionCounter);
-  const session = { id, title: 'New chat', messages: [], books: new Map() };
+  const session = { id, title: 'New chat', messages: [], books: new Map(), updatedAt: Date.now() };
   chatSessions.unshift(session);
   currentSessionId = id;
   document.getElementById('chat-messages').innerHTML = '';
@@ -354,7 +438,7 @@ function saveCurrentSession() {
   const session = chatSessions.find(s => s.id === currentSessionId);
   if (!session) return;
   const msgs = [];
-  document.querySelectorAll('#chat-messages .chat-message').forEach(el => {
+  document.querySelectorAll('#chat-messages .chat-message:not(#loading-msg)').forEach(el => {
     const role = el.classList.contains('user') ? 'user' : 'assistant';
     const msg = { role, content: el.dataset.raw || el.textContent };
     if (el.dataset.sources) try { msg.sources = JSON.parse(el.dataset.sources); } catch {}
@@ -363,6 +447,7 @@ function saveCurrentSession() {
   });
   session.messages = msgs;
   session.books = new Map(selectedBooks);
+  if (msgs.length) session.updatedAt = Date.now();
 }
 
 function switchToSession(id) {
@@ -384,6 +469,18 @@ function switchToSession(id) {
   }
 }
 
+function deleteSession(id) {
+  chatSessions = chatSessions.filter(s => s.id !== id);
+  if (currentSessionId === id) {
+    currentSessionId = null;
+    document.getElementById('chat-messages').innerHTML = '';
+    hideChatRightSidebar();
+  }
+  persistSessions();
+  renderChatHistory();
+  if (getRoute().page === 'chats') _renderChatsList(document.getElementById('chats-search')?.value?.trim().toLowerCase() || '');
+}
+
 function updateSessionTitle(message) {
   const session = chatSessions.find(s => s.id === currentSessionId);
   if (session && session.title === 'New chat') {
@@ -396,10 +493,14 @@ function renderChatHistory() {
   const list = document.getElementById('chat-history-list');
   if (!list) return;
   list.innerHTML = chatSessions.map(s =>
-    `<button class="history-item ${s.id === currentSessionId ? 'active' : ''}" data-sid="${s.id}">${esc(s.title)}</button>`
+    `<div class="history-item-wrap ${s.id === currentSessionId ? 'active' : ''}" data-sid="${s.id}">
+      <button class="history-item">${esc(s.title)}</button>
+      <button class="history-delete" title="Delete">&times;</button>
+    </div>`
   ).join('');
-  list.querySelectorAll('.history-item').forEach(btn => {
-    btn.addEventListener('click', () => switchToSession(btn.dataset.sid));
+  list.querySelectorAll('.history-item-wrap').forEach(wrap => {
+    wrap.querySelector('.history-item').addEventListener('click', () => switchToSession(wrap.dataset.sid));
+    wrap.querySelector('.history-delete').addEventListener('click', e => { e.stopPropagation(); deleteSession(wrap.dataset.sid); });
   });
 }
 
@@ -428,13 +529,17 @@ function _renderChatsList(query) {
   listEl.innerHTML = sessions.map(s =>
     `<div class="chats-list-item" data-sid="${s.id}">
       <svg class="chat-item-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-      <span class="chat-item-title">${esc(s.title)}</span>
+      <div class="chats-item-body">
+        <div class="chat-item-title">${esc(s.title)}</div>
+        ${s.updatedAt ? `<div class="chats-item-time">Last message ${timeAgo(s.updatedAt)}</div>` : ''}
+      </div>
+      <button class="chats-delete-btn" title="Delete">&times;</button>
     </div>`
   ).join('');
   listEl.querySelectorAll('.chats-list-item').forEach(el => {
-    el.addEventListener('click', () => {
-      switchToSession(el.dataset.sid);
-    });
+    el.querySelector('.chats-item-body').addEventListener('click', () => switchToSession(el.dataset.sid));
+    el.querySelector('.chat-item-icon').addEventListener('click', () => switchToSession(el.dataset.sid));
+    el.querySelector('.chats-delete-btn').addEventListener('click', e => { e.stopPropagation(); deleteSession(el.dataset.sid); });
   });
 }
 
@@ -462,6 +567,7 @@ async function sendGlobalChat(message) {
 
   if (!currentSessionId) createSession();
   updateSessionTitle(message);
+  const sentSessionId = currentSessionId;
 
   appendMsg(chatBox, 'user', message);
   showLoading(chatBox);
@@ -479,18 +585,43 @@ async function sendGlobalChat(message) {
       body.book_context = bookContext;
     }
 
+    // Collect conversation history (exclude the message we just appended and loading)
+    const history = [];
+    chatBox.querySelectorAll('.chat-message:not(#loading-msg)').forEach(el => {
+      const role = el.classList.contains('user') ? 'user' : 'assistant';
+      const content = el.dataset.raw || el.textContent;
+      history.push({ role, content });
+    });
+    // Remove the last entry (the message we just appended as user)
+    if (history.length && history[history.length - 1].role === 'user') {
+      history.pop();
+    }
+    if (history.length) body.history = history;
+
     const data = await api('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    removeLoading();
+
     const sources = (data.sources || []).map(s => ({ id: s.agent_id, name: s.agent_name }));
     const msgOpts = {};
     if (data.web_sources?.length) msgOpts.webSources = data.web_sources;
     if (data.grounded) msgOpts.grounded = true;
     if (data.references?.length) msgOpts.references = data.references;
     if (data.usage) msgOpts.usage = data.usage;
+
+    // If user switched sessions while waiting, save to the original session without touching DOM
+    if (currentSessionId !== sentSessionId) {
+      const session = chatSessions.find(s => s.id === sentSessionId);
+      if (session) {
+        session.messages.push({ role: 'assistant', content: data.answer, sources, opts: msgOpts });
+        persistSessions();
+      }
+      return;
+    }
+
+    removeLoading();
     appendMsg(chatBox, 'assistant', data.answer, sources, msgOpts);
     renderChatSidebar(sources, message);
     showChatRightSidebar();
@@ -498,6 +629,7 @@ async function sendGlobalChat(message) {
     // Trigger polling if any catalog books are being learned
     ensurePolling();
   } catch (err) {
+    if (currentSessionId !== sentSessionId) return;
     removeLoading();
     const msg = err.message.includes('No available provider')
       ? 'No LLM API key configured. Please add GEMINI_API_KEY, OPENAI_API_KEY, or KIMI_API_KEY to your .env file and restart the server.'
@@ -513,6 +645,8 @@ function handleHomeSend() {
   if (!msg) return;
   input.value = '';
   input.style.height = 'auto';
+  saveCurrentSession();
+  currentSessionId = null;
   sendGlobalChat(msg);
 }
 
@@ -545,31 +679,40 @@ function onChatPageShow() {
 }
 
 // ─── Chat sidebar (right) ───
+// Snapshot of books used in the conversation (independent of selectedBooks chips)
+let _sidebarBooks = new Map();
+
 function renderChatSidebar(sources, query) {
+  // Snapshot current selectedBooks so sidebar is independent of future chip changes
+  _sidebarBooks = new Map(selectedBooks);
+
   const srcEl = document.getElementById('sidebar-sources');
   if (!sources.length) {
-    if (selectedBooks.size) {
-      srcEl.innerHTML = [...selectedBooks.values()].map(b =>
+    if (_sidebarBooks.size) {
+      srcEl.innerHTML = [..._sidebarBooks.values()].map(b =>
         sidebarBookItem(b.agentId || b.id, b.title, b.author, b.isbn)
       ).join('');
     } else {
       srcEl.innerHTML = '<p style="font-size:12px;color:var(--text-muted)">No specific sources used</p>';
     }
   } else {
-    srcEl.innerHTML = sources.map(s => sidebarBookItem(s.id, s.name, '')).join('');
+    srcEl.innerHTML = sources.map(s => {
+      const book = allBooks.find(b => b.id === s.id);
+      return sidebarBookItem(s.id, s.name, book?.author || '', book?.isbn);
+    }).join('');
   }
 
   const relEl = document.getElementById('sidebar-related');
-  // Collect IDs to exclude (sources + selected)
+  // Collect IDs to exclude (sources + sidebar books)
   const excludeIds = new Set(sources.map(s => s.id));
-  for (const [, b] of selectedBooks) excludeIds.add(b.agentId || b.id);
-  // Collect categories from sources + selected books
+  for (const [, b] of _sidebarBooks) excludeIds.add(b.agentId || b.id);
+  // Collect categories from sources + sidebar books
   const relCategories = new Set();
   sources.forEach(s => {
     const book = allBooks.find(b => b.id === s.id);
     if (book?.category) relCategories.add(book.category.toLowerCase());
   });
-  for (const [, b] of selectedBooks) {
+  for (const [, b] of _sidebarBooks) {
     const book = allBooks.find(x => (x.agentId || x.id) === (b.agentId || b.id));
     if (book?.category) relCategories.add(book.category.toLowerCase());
   }
@@ -599,16 +742,11 @@ function restoreChatSidebar(messages) {
   }
 }
 
-function sidebarBookItem(id, title, author, isbn) {
-  const coverUrl = isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-S.jpg` : '';
-  const coverHtml = coverUrl
-    ? `<img class="sidebar-book-cover" src="${coverUrl}" alt="" onerror="this.style.display='none'" />`
-    : '';
+function sidebarBookItem(id, title, author) {
   return `<div class="sidebar-book-item" onclick="selectBookFromSidebar('${esc(id)}')">
-    ${coverHtml}
     <div class="sidebar-book-info">
       <div class="sidebar-book-title">${esc(title)}</div>
-      <div class="sidebar-book-author">${esc(author)}</div>
+      ${author ? `<div class="sidebar-book-author">${esc(author)}</div>` : ''}
     </div>
   </div>`;
 }
@@ -1006,6 +1144,19 @@ function bindEnterSend(textarea, handler) {
 // ─── Utility ───
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+function timeAgo(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  if (diff < 0 || diff < 30000) return 'Just now';
+  const m = Math.floor(diff / 60000);
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h ago';
+  const d = Math.floor(h / 24);
+  if (d < 30) return d + 'd ago';
+  return new Date(ts).toLocaleDateString();
+}
+
 function showToast(msg) {
   const t = document.createElement('div');
   t.className = 'token-toast';
@@ -1075,6 +1226,7 @@ async function init() {
   await Promise.all([loadAgents(), loadVotes(), loadTopics()]);
   buildBookList();
   restoreSessions();
+  renderChatHistory();
 
   document.getElementById('app-layout').classList.add('sidebar-collapsed');
 

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=Libre+Baskerville:wght@400;700&display=swap');
 
 :root {
   --bg-home: #f5f5f7;
@@ -75,9 +75,10 @@ body {
   padding: 14px 12px 10px 16px; flex-shrink: 0;
 }
 .sidebar-logo {
-  font-size: 18px; font-weight: 300; letter-spacing: 0.06em;
+  font-size: 18px; font-weight: 500; letter-spacing: 0.02em;
   text-decoration: none; color: var(--text);
   white-space: nowrap;
+  font-family: 'Libre Baskerville', Georgia, serif;
 }
 .sidebar-logo:hover { color: var(--text-secondary); }
 
@@ -95,7 +96,7 @@ body {
   margin: 0 12px 4px; padding: 8px 12px;
   border-radius: 8px; border: none;
   background: transparent; color: var(--text);
-  font-size: 13px; font-weight: 500; font-family: inherit;
+  font-size: 13px; font-weight: 500; font-family: 'Libre Baskerville', Georgia, serif;
   cursor: pointer; transition: all 0.15s;
   white-space: nowrap;
 }
@@ -108,7 +109,7 @@ body {
   border-radius: 8px;
   display: flex; align-items: center; gap: 8px;
   color: var(--text-muted); text-decoration: none;
-  font-size: 13px; font-weight: 500;
+  font-size: 13px; font-weight: 500; font-family: 'Libre Baskerville', Georgia, serif;
   transition: all 0.15s; white-space: nowrap;
 }
 .sidebar-library-link:hover { color: var(--text); background: rgba(0,0,0,0.04); }
@@ -119,7 +120,7 @@ body {
   border-radius: 8px; border: none; background: transparent;
   display: flex; align-items: center; gap: 8px;
   color: var(--text-muted); text-decoration: none;
-  font-size: 13px; font-weight: 500; font-family: inherit;
+  font-size: 13px; font-weight: 500; font-family: 'Libre Baskerville', Georgia, serif;
   cursor: pointer; transition: all 0.15s; white-space: nowrap;
 }
 .sidebar-chats-link:hover { color: var(--text); background: rgba(0,0,0,0.04); }
@@ -130,17 +131,31 @@ body {
   border-top: 1px solid var(--border);
   margin-top: 4px;
 }
+.history-item-wrap {
+  display: flex; align-items: center;
+  border-radius: 8px; margin-bottom: 2px;
+  transition: background 0.15s;
+}
+.history-item-wrap:hover { background: rgba(0,0,0,0.04); }
+.history-item-wrap.active { background: rgba(0,0,0,0.06); }
 .history-item {
-  display: block; width: 100%;
+  flex: 1; min-width: 0;
   padding: 8px 12px; border-radius: 8px; border: none;
   background: transparent; color: var(--text);
   font-size: 13px; text-align: left; cursor: pointer;
-  font-family: inherit; transition: background 0.15s;
+  font-family: inherit;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  margin-bottom: 2px;
 }
-.history-item:hover { background: rgba(0,0,0,0.04); }
-.history-item.active { background: rgba(0,0,0,0.06); font-weight: 500; }
+.history-item-wrap.active .history-item { font-weight: 500; }
+.history-delete {
+  flex-shrink: 0; width: 24px; height: 24px;
+  border: none; background: transparent; color: var(--text-muted);
+  font-size: 14px; cursor: pointer; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 0.15s;
+}
+.history-item-wrap:hover .history-delete { opacity: 0.6; }
+.history-delete:hover { opacity: 1 !important; color: #dc2626; }
 
 .sidebar-bottom {
   margin-top: auto;
@@ -198,11 +213,15 @@ body {
   margin-top: -80px;
 }
 
+.greeting-row {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; margin-bottom: 24px;
+}
+.greeting-logo { flex-shrink: 0; }
 .greeting {
-  font-size: 32px; font-weight: 300; letter-spacing: -0.02em;
+  font-size: 32px; font-weight: 400; letter-spacing: -0.01em;
   color: var(--text);
-  margin-bottom: 24px;
-  text-align: center;
+  font-family: 'Libre Baskerville', Georgia, serif;
 }
 
 /* ─── Composer (shared) ─── */
@@ -267,6 +286,35 @@ body {
 .home-status {
   margin-top: 8px; font-size: 13px; color: var(--accent);
   min-height: 20px; text-align: center;
+}
+
+/* ─── Onboarding ─── */
+.onboarding { text-align: center; }
+.onboarding-subtitle { font-size: 18px; color: var(--text-secondary); margin-bottom: 24px; }
+.onboarding-body { max-width: 480px; margin: 0 auto; }
+.onboarding-input {
+  width: 280px; padding: 12px 16px; border-radius: 12px;
+  border: 1px solid var(--border-strong); background: var(--bg-chat);
+  font-size: 16px; text-align: center; font-family: inherit;
+  color: var(--text); outline: none;
+  transition: border-color 0.2s;
+}
+.onboarding-input:focus { border-color: rgba(0,113,227,0.4); }
+.onboarding-input::placeholder { color: var(--text-muted); }
+.onboarding-btn {
+  padding: 10px 32px; border-radius: 999px; border: none;
+  background: var(--text); color: #fff;
+  font-size: 14px; font-weight: 600; font-family: inherit;
+  cursor: pointer; margin-top: 16px;
+  transition: opacity 0.15s;
+}
+.onboarding-btn:hover { opacity: 0.85; }
+.onboarding-topics {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  justify-content: center; margin-bottom: 20px;
+}
+.onboarding-topics .topic-tag.selected {
+  background: var(--text); color: #fff; border-color: var(--text);
 }
 
 .home-quote {
@@ -361,11 +409,17 @@ body {
 
 /* Messages */
 .chat-message {
-  line-height: 1.7; word-break: break-word; margin-bottom: 20px;
+  font-size: 14px; line-height: 1.7; word-break: break-word; margin-bottom: 24px;
+}
+.chat-message.user {
+  margin-top: 8px;
 }
 .chat-message.user {
   font-weight: 500; white-space: pre-wrap;
-  text-align: right; color: var(--text);
+  color: var(--text);
+  background: #fdf3e7; border-radius: 18px;
+  padding: 10px 16px; margin-left: auto;
+  max-width: 85%; width: fit-content;
 }
 .chat-message.assistant {
   color: var(--text);
@@ -515,8 +569,9 @@ body {
   width: 100%;
 }
 .page-title {
-  font-size: 28px; font-weight: 600;
-  letter-spacing: -0.02em; margin-bottom: 24px;
+  font-size: 32px; font-weight: 400;
+  letter-spacing: -0.01em; margin-bottom: 24px;
+  font-family: 'Libre Baskerville', Georgia, serif;
 }
 .library-toolbar {
   display: flex; gap: 16px; align-items: center;
@@ -727,12 +782,15 @@ body {
   padding: 32px 32px 64px;
   width: 100%;
 }
+.chats-title-row {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.chats-title-row .page-title { margin-bottom: 16px; }
 .chats-header {
-  display: flex; align-items: center; gap: 10px;
   margin-bottom: 16px;
 }
 .chats-search {
-  flex: 1; padding: 10px 16px;
+  width: 100%; padding: 10px 16px;
   border: 1px solid var(--border-strong);
   border-radius: 10px; outline: none;
   background: var(--bg-chat);
@@ -760,13 +818,27 @@ body {
   font-size: 14px; color: var(--text);
 }
 .chats-list-item:hover { background: rgba(0,0,0,0.04); }
+.chats-item-body {
+  flex: 1; min-width: 0; cursor: pointer;
+}
 .chats-list-item .chat-item-title {
-  flex: 1; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chats-item-time {
+  font-size: 11px; color: var(--text-muted); margin-top: 2px;
 }
 .chats-list-item .chat-item-icon {
   flex-shrink: 0; color: var(--text-muted); margin-right: 10px;
 }
+.chats-delete-btn {
+  flex-shrink: 0; width: 28px; height: 28px;
+  border: none; background: transparent; color: var(--text-muted);
+  font-size: 16px; cursor: pointer; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 0.15s;
+}
+.chats-list-item:hover .chats-delete-btn { opacity: 0.6; }
+.chats-delete-btn:hover { opacity: 1 !important; color: #dc2626; background: rgba(220,38,38,0.08); }
 .chats-empty {
   padding: 48px 16px; text-align: center;
   font-size: 13px; color: var(--text-muted);

@@ -63,7 +63,7 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 _VERBOSE_CITE_RE = re.compile(
-    r"\[(?:Google [\w\s]+?|Context|Source|Sources|Ref|Reference)\s*((?:\d+(?:\s*,\s*)?)+)\]"
+    r"\[(?:Google [\w\s]+?|Context|Source|Sources|Ref|Reference|Passage)\s*((?:\d+(?:\s*,\s*)?)+)\]"
 )
 
 
@@ -106,11 +106,17 @@ class BookContext(BaseModel):
     author: str = ""
 
 
+class HistoryMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+
 class GlobalChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     top_k: int | None = None
     agent_ids: list[str] | None = None
     book_context: list[BookContext] | None = None
+    history: list[HistoryMessage] | None = None
 
 
 class VoteRequest(BaseModel):
@@ -481,8 +487,9 @@ def api_chat(agent_id: str, payload: ChatRequest, background_tasks: BackgroundTa
     system = (
         "You are Feynman, a Socratic study assistant inspired by the Feynman learning method. "
         f"You are helping the user study {book_hint}. "
-        "Answer using the provided context. When you use information from the context, "
-        "cite it with [N] markers matching the context numbers (e.g. [1], [2]). "
+        "Answer using the provided context passages. Each passage has a unique number: [Passage 1], [Passage 2], [Passage 3], etc. "
+        "IMPORTANT: Even though all passages are from the same book, they are DIFFERENT text segments with DIFFERENT numbers. "
+        "Cite the specific passage number you used, e.g. [1], [2], [3]. Never cite all as [1] — each passage must keep its own number. "
         "If the context is insufficient, supplement with your own knowledge (no citation needed). "
         "Encourage deeper thinking by occasionally suggesting follow-up questions. "
         "Respond in the same language as the user's question."
@@ -579,9 +586,9 @@ def api_global_chat(payload: GlobalChatRequest, background_tasks: BackgroundTask
         titles = [f'"{b.title}" by {b.author}' if b.author else f'"{b.title}"' for b in payload.book_context]
         book_focus = "The user is studying: " + ", ".join(titles) + ". "
 
-    # Resolve skills for all target agents
+    # Resolve skills for all target agents (non-RAG context: content_fetch, web_search)
     use_grounding = False
-    combined_context = ""
+    supplementary_context = ""
 
     if target_agents:
         results = resolve_multi_agent(target_agents, payload.message, top_k=payload.top_k)
@@ -590,8 +597,10 @@ def api_global_chat(payload: GlobalChatRequest, background_tasks: BackgroundTask
             if sr.use_grounding:
                 use_grounding = True
             if sr.context:
-                context_parts.append(f"--- {agent['name']} ---\n{sr.context}")
-        combined_context = "\n\n".join(context_parts)
+                # Strip any [N] numbering from skill context to avoid collision with RAG numbering
+                clean = re.sub(r"\[\d+\]\s*(?:\(from\s+\"[^\"]*\"\)\s*)?", "", sr.context)
+                context_parts.append(f"--- {agent['name']} ---\n{clean}")
+        supplementary_context = "\n\n".join(context_parts)
 
     # Cross-book RAG: search selected books, or ALL ready books if none selected
     ready_ids = [a["id"] for a in target_agents if a["status"] == "ready"]
@@ -608,21 +617,22 @@ def api_global_chat(payload: GlobalChatRequest, background_tasks: BackgroundTask
     except ProviderError:
         pass
 
-    # Merge contexts
-    if rag_context and combined_context:
-        final_context = f"{rag_context}\n\n{combined_context}"
+    # Merge contexts: RAG chunks are the numbered citation source; supplementary is background info
+    if rag_context and supplementary_context:
+        final_context = f"{rag_context}\n\nAdditional background:\n{supplementary_context}"
     elif rag_context:
         final_context = rag_context
     else:
-        final_context = combined_context
+        final_context = supplementary_context
 
     # Build system prompt and user message
     if final_context:
         system = (
             "You are Feynman, a Socratic study assistant that helps users learn through questioning. "
             f"{book_focus}"
-            "Use the provided context from their books to answer. "
-            "When you use information from the context, cite it with [N] markers matching the context numbers (e.g. [1], [2]). "
+            "Use the provided context passages to answer. Each passage has a unique number: [Passage 1], [Passage 2], [Passage 3], etc. "
+            "IMPORTANT: Even when multiple passages come from the same book, they are DIFFERENT text segments with DIFFERENT numbers. "
+            "Cite the specific passage number you used, e.g. [1], [2], [3]. Never cite all as [1] — each passage must keep its own number. "
             "If the context is insufficient, supplement with your own knowledge (no citation needed). "
             "Encourage deeper thinking by suggesting follow-up questions. "
             "Respond in the same language as the user's question."
@@ -659,8 +669,11 @@ def api_global_chat(payload: GlobalChatRequest, background_tasks: BackgroundTask
         user_prompt = payload.message
 
     try:
+        conv_history = None
+        if payload.history:
+            conv_history = [{"role": m.role, "content": m.content} for m in payload.history]
         result, chat_provider = chat_with_fallback(
-            system=system, user=user_prompt, use_grounding=use_grounding,
+            system=system, user=user_prompt, history=conv_history, use_grounding=use_grounding,
         )
     except ProviderError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
