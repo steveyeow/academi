@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Feynman</title>
-    <link rel="stylesheet" href="/static/styles.css?v=24" />
+    <link rel="stylesheet" href="/static/styles.css?v=30" />
   </head>
   <body>
     <div class="app-layout" id="app-layout">
@@ -118,7 +118,7 @@
                 </button>
               </div>
             </div>
-            <p class="home-hint"><a href="#/library" id="home-upload-link" class="hint-link" onclick="event.preventDefault(); event.stopPropagation(); togglePopover('home-popover', 'home-popover-book-list', 'home-popover-no-books')">Add one or more books</a> to start a conversation</p>
+            <div id="home-starters" class="home-starters"></div>
             <div id="home-upload-status" class="home-status"></div>
           </div>
           <p class="home-quote">"You learn by asking questions, by thinking, and by experimenting." — Richard Feynman</p>
@@ -234,6 +234,6 @@
       </div><!-- .app-main -->
     </div><!-- .app-layout -->
 
-    <script src="/static/app.js?v=24"></script>
+    <script src="/static/app.js?v=30"></script>
   </body>
 </html>

@@ -214,6 +214,90 @@ function renderHome() {
   document.getElementById('onboarding').classList.add('hidden');
   document.getElementById('home-center-main').classList.remove('hidden');
   document.getElementById('greeting').textContent = getGreeting();
+  renderStarters();
+}
+
+// ─── Starter questions ───
+function renderStarters() {
+  const container = document.getElementById('home-starters');
+  if (!container) return;
+
+  const questions = generateStarters();
+  if (!questions.length) { container.innerHTML = ''; return; }
+
+  container.innerHTML = questions.map(q =>
+    `<button class="starter-pill">${esc(q)}</button>`
+  ).join('');
+  container.querySelectorAll('.starter-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('home-input').value = btn.textContent;
+      document.getElementById('home-input').focus();
+    });
+  });
+}
+
+function generateStarters() {
+  const selected = [...selectedBooks.values()];
+
+  // ── Books selected in composer → questions about those books ──
+  if (selected.length === 1) {
+    const t = selected[0].title;
+    return [
+      `What are the key ideas in "${t}"?`,
+      `Summarize the core argument of "${t}"`,
+      `What makes "${t}" unique compared to similar books?`,
+      `Quiz me on "${t}"`,
+    ];
+  }
+  if (selected.length >= 2) {
+    const a = selected[0].title, b = selected[1].title;
+    const questions = [
+      `Compare the main ideas in "${a}" and "${b}"`,
+      `What do "${a}" and "${b}" have in common?`,
+      `What are the key ideas in "${a}"?`,
+    ];
+    if (selected.length > 2) {
+      questions.push(`Summarize what these ${selected.length} books cover together`);
+    } else {
+      questions.push(`What are the key ideas in "${b}"?`);
+    }
+    return questions;
+  }
+
+  // ── No selection → questions from the library ──
+  const ready = allBooks.filter(b => b.available);
+  const catalog = allBooks.filter(b => b.status === 'catalog');
+  const books = ready.length ? ready : catalog;
+
+  if (!books.length) {
+    return [
+      'I want to learn quantitative trading from scratch',
+      'Teach me the fundamentals of philosophy',
+      'What are the best books on cognitive psychology?',
+      'Help me understand machine learning',
+    ];
+  }
+
+  const questions = [];
+  const shuffled = [...books].sort(() => Math.random() - 0.5);
+
+  if (shuffled[0]) {
+    questions.push(`What are the key ideas in "${shuffled[0].title}"?`);
+  }
+  if (shuffled[1]) {
+    questions.push(`Summarize the core argument of "${shuffled[1].title}"`);
+  }
+  if (shuffled.length >= 2) {
+    questions.push(`Compare "${shuffled[0].title}" and "${shuffled[1].title}"`);
+  }
+
+  const categories = [...new Set(books.map(b => b.category).filter(Boolean))];
+  if (categories.length) {
+    const cat = categories[Math.floor(Math.random() * categories.length)];
+    questions.push(`What should I learn first about ${cat}?`);
+  }
+
+  return questions.slice(0, 4);
 }
 
 // ─── Onboarding ───
@@ -626,6 +710,8 @@ async function sendGlobalChat(message) {
     renderChatSidebar(sources, message);
     showChatRightSidebar();
     persistSessions();
+    // Refresh agents if new books were discovered via chat
+    if (sources.length) loadAgents();
     // Trigger polling if any catalog books are being learned
     ensurePolling();
   } catch (err) {
@@ -1113,6 +1199,8 @@ function renderSelectedChips() {
   if (homeInput) {
     homeInput.placeholder = selectedBooks.size > 0 ? 'Ask your question...' : 'Ask and learn across one or more books...';
   }
+  // Re-render starters to match selected books
+  if (getRoute().page === 'home') renderStarters();
 }
 
 // Select a book and navigate to chat

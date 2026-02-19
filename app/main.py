@@ -603,19 +603,45 @@ def api_global_chat(payload: GlobalChatRequest, background_tasks: BackgroundTask
         supplementary_context = "\n\n".join(context_parts)
 
     # Cross-book RAG: search selected books, or ALL ready books if none selected
+    _RAG_RELEVANCE_THRESHOLD = 0.65  # below this, chunks are too tangential to be useful
     ready_ids = [a["id"] for a in target_agents if a["status"] == "ready"]
     rag_context = ""
     rag_chunks: list[dict[str, Any]] = []
+    discovered_agents: list[dict[str, Any]] = []
     try:
         if ready_ids:
             rag_chunks = retrieve_cross_book(payload.message, payload.top_k, agent_ids=ready_ids)
         elif not target_agents:
             # No books selected — search the entire library
             rag_chunks = retrieve_cross_book(payload.message, payload.top_k)
+            # Filter out low-relevance results from unrelated books
+            # Drop low-relevance results when no books are explicitly selected
+            if rag_chunks and rag_chunks[0]["score"] < _RAG_RELEVANCE_THRESHOLD:
+                log.info("RAG top score %.3f below threshold — ignoring library results", rag_chunks[0]["score"])
+                rag_chunks = []
         if rag_chunks:
             rag_context = build_context(rag_chunks)
     except ProviderError:
         pass
+
+    # Auto-discover: if no books selected and no relevant RAG results, discover books for the topic
+    if not target_agents and not rag_chunks:
+        try:
+            topic = payload.message[:80]
+            books, _ = _discover_books_for_topic(topic, count=4)
+            for book in books:
+                agent = get_agent(book["id"])
+                if agent:
+                    discovered_agents.append(agent)
+                    if agent["status"] == "catalog":
+                        background_tasks.add_task(_learn_agent, book["id"])
+            if discovered_agents:
+                book_focus = "Recommended books for this topic: " + ", ".join(
+                    f'"{a["name"]}"' for a in discovered_agents
+                ) + ". "
+                use_grounding = True
+        except Exception as exc:
+            log.warning("Auto-discovery in chat failed: %s", exc)
 
     # Merge contexts: RAG chunks are the numbered citation source; supplementary is background info
     if rag_context and supplementary_context:
@@ -659,13 +685,25 @@ def api_global_chat(payload: GlobalChatRequest, background_tasks: BackgroundTask
         )
         user_prompt = payload.message
     else:
-        system = (
-            "You are Feynman, a Socratic study assistant that helps users learn through questioning. "
-            "The user has not selected any books yet, so answer using your own knowledge. "
-            "Be thorough and educational. Suggest relevant books the user might want to explore. "
-            "Encourage deeper thinking by suggesting follow-up questions. "
-            "Respond in the same language as the user's question."
-        )
+        if discovered_agents:
+            system = (
+                "You are Feynman, a Socratic study assistant that helps users learn through questioning. "
+                f"{book_focus}"
+                "I've found relevant books for this topic and added them to the user's library. "
+                "Give a thorough answer using your knowledge of these books and the subject. "
+                "Reference specific ideas, authors, and concepts from the recommended books. "
+                "Structure your answer to help a beginner build a learning roadmap. "
+                "Encourage deeper thinking by suggesting follow-up questions. "
+                "Respond in the same language as the user's question."
+            )
+        else:
+            system = (
+                "You are Feynman, a Socratic study assistant that helps users learn through questioning. "
+                "The user has not selected any books yet, so answer using your own knowledge. "
+                "Be thorough and educational. Suggest relevant books the user might want to explore. "
+                "Encourage deeper thinking by suggesting follow-up questions. "
+                "Respond in the same language as the user's question."
+            )
         user_prompt = payload.message
 
     try:
@@ -681,7 +719,7 @@ def api_global_chat(payload: GlobalChatRequest, background_tasks: BackgroundTask
     # Process LLM recommendations in background
     background_tasks.add_task(_process_recommendations, result.content)
 
-    # Deduplicate source agents
+    # Deduplicate source agents (RAG chunks + auto-discovered)
     seen: set[str] = set()
     sources: list[dict[str, Any]] = []
     for chunk in rag_chunks:
@@ -689,6 +727,10 @@ def api_global_chat(payload: GlobalChatRequest, background_tasks: BackgroundTask
         if aid and aid not in seen:
             seen.add(aid)
             sources.append({"agent_id": aid, "agent_name": chunk.get("agent_name", "Unknown")})
+    for a in discovered_agents:
+        if a["id"] not in seen:
+            seen.add(a["id"])
+            sources.append({"agent_id": a["id"], "agent_name": a["name"]})
 
     # Build references only for chunks actually cited in the response
     answer_text = _normalize_citations(result.content)
