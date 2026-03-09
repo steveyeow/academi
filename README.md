@@ -1,48 +1,53 @@
-# AcademiAI
+# Feynman
 
-Feynman: "You learn by asking questions."
+> "What I cannot create, I do not understand." — Richard Feynman
 
-**A chattable library-turn any book into a conversation.** AcademiAI is a Socratic study assistant that lets you chat with books, discover new ones through your interests, and get answers grounded in real content — with traceable citations back to the source.
+**Don't read books. Talk to them. Don't pick topics blindly. Let AI build your knowledge system.**
 
-## Core Features
+Feynman is a Socratic study companion powered by AcademiAI. It does two things:
 
-### Interest-Driven Book Discovery
-Pick topics you care about — Psychology, Philosophy, Economics, Physics, and more. The system uses LLM to curate the best books for each topic and adds them to your personal library instantly. No predefined catalog; your library grows from your curiosity.
+**1. Turn any book into a conversation** — Ask questions, get answers grounded in the book's actual content, with every claim traced back to a specific passage.
 
-### Chat With Any Book
-Ask questions about a book and get answers powered by a multi-layered skill system:
+**2. Turn any topic into a knowledge system** — Curious about microeconomics but don't know where to start? Feynman discovers the right books, generates the questions you should be asking, and teaches you through conversation — all grounded in real sources.
 
-| Skill | What it does |
-|-------|-------------|
-| **RAG** | Retrieves relevant passages from the book's indexed content |
-| **Content Fetch** | Pulls information from Open Library, Google Books, and Wikipedia |
-| **Web Search** | Uses Gemini Search Grounding for real-time web answers |
-| **LLM Knowledge** | Falls back to the model's training knowledge |
+---
 
-Skills are tried in priority order — you always get the best available answer.
+## Chat With Books
 
-### Cross-Book Search
-Select multiple books and ask questions across all of them. AcademiAI searches across your entire library to find the most relevant passages, regardless of which book they come from.
+Have a book but don't want to read all 300 pages? Chat with it instead. Ask anything and get answers backed by a multi-layered skill system:
 
-### Traceable Citations
-Every answer cites its sources with clickable `[1]`, `[2]` markers. Click a citation to jump to the reference — see exactly which book and passage the answer came from. No more black-box AI responses.
+| Priority | Skill | What it does |
+|----------|-------|-------------|
+| 1st | **RAG** | Retrieves relevant passages from the book's indexed content |
+| 2nd | **Content Fetch** | Pulls information from Open Library, Google Books, and Wikipedia |
+| 3rd | **Web Search** | Uses Gemini Search Grounding for real-time web answers |
+| 4th | **LLM Knowledge** | Falls back to the model's training knowledge |
 
-### Self-Growing Library
-Your library expands naturally through multiple channels:
-- **Topic discovery** — Pick an interest, get curated book recommendations via LLM
-- **Search & add** — Search for any book in the library; if it's not there, the system finds and adds it automatically
-- **Chat-driven** — Mention an unknown book in conversation and it gets added to your library
-- **Upload** — Bring your own PDF or TXT files
-- **Community voting** — Books with enough upvotes get auto-indexed
+Every answer includes clickable `[1]`, `[2]` citations — click to see exactly which passage the answer came from. No black-box responses.
 
-### Token Usage Transparency
-Every LLM call shows its token consumption — chat responses, book discovery, and search operations all display cost in real time. No hidden usage.
+Select multiple books and ask questions across all of them — Feynman searches your entire library to find the most relevant passages regardless of source.
+
+## Topic-Driven Knowledge Building
+
+Don't have a book? Start with a topic.
+
+Pick an interest — Psychology, Philosophy, Economics, Physics, or anything — and Feynman:
+1. **Discovers the right books** via LLM curation (no predefined catalog)
+2. **Proposes study questions** that map out what you need to understand
+3. **Answers your questions** grounded in the discovered books' content
+4. **Grows your library organically** as you explore deeper
+
+Your library also expands through search, chat mentions, PDF/TXT uploads, and community voting (books with enough upvotes get auto-indexed).
+
+## Token Usage Transparency
+
+Every LLM call shows its token consumption in real time — chat, discovery, and search. No hidden costs.
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/steveyeow/academi.git
-cd academi
+git clone https://github.com/steveyeow/feynman.git
+cd feynman
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
