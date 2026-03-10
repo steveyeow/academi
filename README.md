@@ -8,7 +8,7 @@
 
 Feynman is **not** a replacement for reading. I'm a devoted paper-book lover — the tactile act of flipping through physical pages puts me in a near-meditative state, and nothing replaces that.
 
-So why build this? Because Richard Feynman rarely read a book cover to cover. He approached books with questions, pulled insights from multiple sources, and moved on when a book had nothing left to teach him. I read the same way. When I want to explore a new domain, I need to know *which* books are worth the deep read and how they fit together. Feynman (the tool) helps me:
+Richard Feynman rarely read a book cover to cover — he approached books with questions, pulled insights from multiple sources, and moved on when a book had nothing left to teach him. I read the same way. When I want to explore a new domain, I need to know *which* books are worth the deep read and how they fit together. This tool helps me:
 
 - **Scout before committing** — quickly understand what a book covers and whether it deserves my full attention.
 - **Build a knowledge scaffold** — when I'm entering an unfamiliar field, it synthesizes key ideas across multiple authoritative works so I can form an initial mental map before diving in.
