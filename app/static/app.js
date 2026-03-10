@@ -1512,7 +1512,7 @@ function showAddMindDialog() {
   overlay.className = 'mind-add-dialog';
   overlay.innerHTML = `
     <div class="mind-add-form">
-      <h3>Add a Great Mind</h3>
+      <h3>Invite a Great Mind</h3>
       <input type="text" id="add-mind-name" placeholder="Name (e.g., Socrates, Ada Lovelace)" autocomplete="off" />
       <div class="mind-add-actions">
         <button id="add-mind-cancel">Cancel</button>

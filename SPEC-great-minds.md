@@ -226,7 +226,7 @@ This means a mind like Charlie Munger gets sharper over time — his responses t
 │ │                         [Chat →]     │    │
 │ └──────────────────────────────────────┘    │
 │                                             │
-│ [+ Add a mind]  [🔄 Different perspectives] │
+│ [+ Invite a mind]  [🔄 Different perspectives] │
 └─────────────────────────────────────────────┘
 ```
 
@@ -278,7 +278,7 @@ This means a mind like Charlie Munger gets sharper over time — his responses t
 │ │  studied, but an experience to be..."   │      │
 │ └─────────────────────────────────────────┘      │
 │                                                  │
-│ [+ Add a mind]  [Ask the panel a question ↓]     │
+│ [+ Invite a mind]  [Ask the panel a question ↓]     │
 │                                                  │
 │ ┌────────────────────────────────────────┐       │
 │ │ @Dennett, how do you respond to        │       │
@@ -295,7 +295,7 @@ This means a mind like Charlie Munger gets sharper over time — his responses t
 - No @ mention → All panelists respond (brief mode).
 
 **Adding/removing minds:**
-- [+ Add a mind] opens a search/suggest popover where the user can type a name or pick from suggestions.
+- [+ Invite a mind] opens a search/suggest popover where the user can type a name or pick from suggestions.
 - Each mind chip has an × to remove from the panel.
 - Adding a mind triggers on-demand generation if not cached.
 
@@ -317,7 +317,7 @@ The Minds page shows all live mind agents as cards in a grid, similar to the Lib
 - **[Chat →]** — start a direct conversation with this mind
 - **Status indicator** — shows if the mind has accumulated memories (e.g., "42 discussions")
 
-Users can also search/filter minds by domain, and an [+ Add a mind] button allows generating any mind on demand by typing a name.
+Users can also search/filter minds by domain, and an [+ Invite a mind] button allows generating any mind on demand by typing a name.
 
 ### 2.5 Where Minds Appear in the UI
 
