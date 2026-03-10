@@ -4,7 +4,7 @@
 
 **Read books the way Feynman did. Ask questions, connect ideas across much broader sources than any single book, and let AI help you build a knowledge system.**
 
-**Coming soon: Chat with Great Minds — discuss books and explore topics you care about with AI agents that simulate great scholars, academics, and practitioners.**
+**Now live: Chat with Great Minds — discuss books and explore topics with AI agents that simulate great scholars, academics, and practitioners. They join your conversations, share perspectives, and debate ideas alongside you.**
 
 ### Why I built this
 
@@ -106,16 +106,18 @@ The system auto-selects the best available provider and falls back through the c
 
 ## Product Updates
 
-### Mar 10, 2026 — Chat with Great Minds *(coming soon)*
+### Mar 10, 2026 — Chat with Great Minds
 
-Chat with books is just the starting point. The next step is to also chat and learn with great minds — scholars, academics, and great practitioners across every field.
+Chat with books was just the starting point. Now you can also chat and learn with great minds — scholars, academics, and great practitioners across every field.
 
-AI agents simulate these thinkers, faithfully capturing how they reason and argue, grounded in their actual works. Whether you're reading a book or exploring a topic, they join as companions who read with you and discuss with you.
+AI agents simulate these thinkers, faithfully capturing how they reason and argue, grounded in their actual works. When you chat about a book or explore a topic, relevant minds automatically join the conversation — and you see exactly who joined with a "X joined the discussion" notification, just like a group chat.
 
-- **Reading a book together** — relevant minds join the conversation. Reading "Wealth of Nations"? Adam Smith explains his reasoning while Marx challenges it and Keynes offers a different lens.
-- **Exploring a topic together** — curious about consciousness or moral philosophy? A panel of great minds across eras sits down with you to discuss and debate.
+- **Minds join your conversations** — when you chat about a book or topic, relevant minds are automatically invited. Reading "Wealth of Nations"? Adam Smith explains his reasoning while Marx challenges it and Keynes offers a different lens. Their replies appear as individual messages in the conversation timeline, not hidden in a sidebar.
+- **Continuity across turns** — once a mind joins, they stay in the conversation and see the full chat history. As the topic shifts, new minds join automatically with a notification, while existing ones continue to participate.
+- **Knowledge graph** — the Great Minds page features an interactive force-directed network visualization. Minds cluster by domain, and you can discover new related minds by clicking "Discover nearby minds" on any node. New minds appear with a highlighted badge and the view auto-pans to show them.
+- **Invite or create minds** — manually invite specific minds to join a chat via the composer, or create your own mind agent from a Twitter profile, blog URL, or pasted text.
 - **Minds that grow** — these agents aren't static. They accumulate memory from conversations, becoming richer and more nuanced over time while staying faithful to who they are.
-- **A universe of minds** — Feynman ships with ~20 pre-generated great minds across philosophy, science, economics, literature, and more. New minds are generated on-demand whenever you need them.
+- **50+ pre-generated minds** — Feynman ships with minds across philosophy, physics, economics, psychology, literature, tech, startups, and more — from Aristotle and Feynman to Marc Andreessen and Naval Ravikant. New minds are generated on-demand whenever you need them.
 
 Like having a study group of the most brilliant people in history, always available to think alongside you. Full design: [`SPEC-great-minds.md`](SPEC-great-minds.md).
 
