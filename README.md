@@ -53,20 +53,6 @@ Pick an interest — Psychology, Philosophy, Economics, Physics, or anything —
 
 Your library also expands through search, chat mentions, PDF/TXT uploads, and community voting (books with enough upvotes get auto-indexed).
 
-## Great Minds — Not Just Chat with Books, but Chat with Great Minds *(Coming Soon)*
-
-Feynman already lets you chat with books. **Great Minds** takes it further — now you can also chat and learn with the great minds behind the ideas: scholars, professors, academics, and great practitioners across every field.
-
-AI agents simulate these great minds — faithfully capturing how they think, argue, and reason, grounded in their actual works. Whether you're reading a specific book or exploring a new domain, these agents join the conversation as companions who read with you and discuss with you.
-
-- **Reading a book together** — When you chat about a book, relevant minds join in. Reading "Wealth of Nations"? Adam Smith explains his reasoning while Marx challenges it and Keynes offers a different lens. They don't just answer your questions — they bring perspectives you wouldn't have thought to ask about.
-
-- **Exploring a topic together** — Curious about consciousness, investing, or moral philosophy? A panel of great minds across eras and disciplines sits down with you to discuss, debate, and teach — each from their own unique vantage point.
-
-Think of it as having a study group of the most brilliant people in history, always available to read with you and think alongside you.
-
-See the full design in [`SPEC-great-minds.md`](SPEC-great-minds.md).
-
 ## Token Usage Transparency
 
 Every LLM call shows its token consumption in real time — chat, discovery, and search. No hidden costs.
@@ -115,6 +101,20 @@ The system auto-selects the best available provider and falls back through the c
 - **LLM**: 5-provider auto-fallback (Gemini, DeepSeek, OpenAI, Kimi, Anthropic)
 - **RAG**: Cosine similarity over embeddings + Gemini Search Grounding
 - **Persistence**: Chat sessions in localStorage, book data in SQLite
+
+## Roadmap
+
+### Great Minds — Not just chat with books, but chat with great minds *(coming soon)*
+
+Feynman already lets you chat with books. **Great Minds** takes it further — now you can also chat and learn with the great minds behind the ideas: scholars, professors, academics, and great practitioners across every field.
+
+AI agents simulate these great minds — faithfully capturing how they think, argue, and reason, grounded in their actual works. Whether you're reading a specific book or exploring a new domain, these agents join the conversation as companions who read with you and discuss with you.
+
+- **Reading a book together** — When you chat about a book, relevant minds join in. Reading "Wealth of Nations"? Adam Smith explains his reasoning while Marx challenges it and Keynes offers a different lens. They don't just answer your questions — they bring perspectives you wouldn't have thought to ask about.
+
+- **Exploring a topic together** — Curious about consciousness, investing, or moral philosophy? A panel of great minds across eras and disciplines sits down with you to discuss, debate, and teach — each from their own unique vantage point.
+
+Think of it as having a study group of the most brilliant people in history, always available to read with you and think alongside you. See the full design in [`SPEC-great-minds.md`](SPEC-great-minds.md).
 
 ## Community
 
