@@ -2,10 +2,10 @@
 
 > "You learn by asking questions, by thinking, and by experimenting." — Richard Feynman
 
-**Read books the way Feynman did — along with a simulated agent network of great minds who join the conversation to read and discuss together with you.**
+**Read books the way Feynman did — along with a continuously evolving simulated agent network of great minds, with highly relevant agent minds joining the chat to read, learn, and discuss together with you.**
 
-With Feynman, you can chat with the books you want to read to quickly understand them and explore the broader context around them.
-You can also start from a topic, and Feynman will surface the most relevant books to help you build a knowledge system grounded in them.
+With Feynman, you can chat with the books you want to read to quickly understand them and explore the broader context around them. You can also start from a topic, and Feynman will surface the most relevant books to help you build a knowledge system grounded in them.
+
 Beyond that, through a continuously evolving simulated network of great minds, Feynman can invite highly relevant thinkers and best practitioners into the conversation — so you can read, learn, and discuss ideas together with them, and see how they might think about the same questions.
 
 ### Why I built this
@@ -20,9 +20,13 @@ Richard Feynman rarely read a book cover to cover — he approached books with q
 
 In short: Feynman helps you read the way Feynman did — not replace reading itself.
 
-And then there's the bigger vision. In 1985, Steve Jobs said: *"Someday, some student will be able to not only read the words Aristotle wrote, but ask Aristotle a question and get an answer."* That idea stuck with me. Every book is a window into a great mind — but a great mind is far more than any single book. If you could actually sit down with Aristotle, or Feynman, or Adam Smith, you'd get something no book alone can give: their way of thinking, applied to your questions.
+### Beyond books
 
-That's why Feynman uses AI agents to simulate a living network of great minds — thinkers who faithfully reason and argue the way they did, grounded in their actual works. They join your reading sessions, challenge your assumptions, and bring perspectives you'd never find on your own. The goal isn't just a smarter reading tool — it's to make the collective wisdom of history's greatest thinkers accessible to everyone, as a living, growing extension of human thought.
+In 1985, Steve Jobs said: *"Someday, some student will be able to not only read the words Aristotle wrote, but ask Aristotle a question and get an answer."* That idea stuck with me. Every book is a window into a great mind — but a great mind is far more than any single book.
+
+If you could actually sit down with Aristotle, or Feynman, or Adam Smith, you'd get something no book alone can give: their way of thinking, applied to your questions.
+
+So I'm also trying to build an agent-simulated network of those great minds. They join your reading sessions, challenge your assumptions, and bring perspectives you'd never find on your own. You can also upload your own minds into the network to connect and expand the scope of collective wisdom of human thought.
 
 ---
 
