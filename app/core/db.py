@@ -7,9 +7,6 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-import psycopg2
-import psycopg2.extras
-
 from .config import DB_PATH, DATA_DIR
 
 _RAW_DATABASE_URL = os.getenv("DATABASE_URL", "")
@@ -42,10 +39,17 @@ def _ensure_dirs() -> None:
         Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
 
 
+def _pg():
+    """Lazy import psycopg2 only when PostgreSQL is used."""
+    import psycopg2
+    import psycopg2.extras
+    return psycopg2
+
 @contextmanager
 def get_conn():
     if _USE_PG:
-        conn = psycopg2.connect(DATABASE_URL)
+        pg = _pg()
+        conn = pg.connect(DATABASE_URL)
         conn.autocommit = False
         try:
             yield conn
@@ -69,6 +73,7 @@ def get_conn():
 
 def _fetchone(conn, query: str, params: tuple = ()) -> dict[str, Any] | None:
     if _USE_PG:
+        import psycopg2.extras
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(query, params)
         row = cur.fetchone()
@@ -80,6 +85,7 @@ def _fetchone(conn, query: str, params: tuple = ()) -> dict[str, Any] | None:
 
 def _fetchall(conn, query: str, params: tuple = ()) -> list[dict[str, Any]]:
     if _USE_PG:
+        import psycopg2.extras
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(query, params)
         return [dict(r) for r in cur.fetchall()]
@@ -379,7 +385,7 @@ def add_chunks(agent_id: str, chunk_records: Iterable[dict[str, Any]]) -> None:
                 agent_id,
                 rec["chunk_index"],
                 rec["text"],
-                rec["vector"] if not _USE_PG else psycopg2.Binary(rec["vector"]),
+                rec["vector"] if not _USE_PG else _pg().Binary(rec["vector"]),
                 rec["dim"],
                 rec["norm"],
             )
