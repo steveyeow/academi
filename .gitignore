@@ -6,3 +6,4 @@ data/
 *.db
 .DS_Store
 web/
+SPEC-pro.md
