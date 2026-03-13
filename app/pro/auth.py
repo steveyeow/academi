@@ -48,6 +48,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         token = auth_header[7:]
         try:
+            header = jwt.get_unverified_header(token)
+            token_alg = header.get("alg", "unknown")
+            if token_alg not in JWT_ALGORITHMS:
+                log.warning(
+                    "JWT alg mismatch: token uses %s, allowed %s. "
+                    "Check SUPABASE_JWT_SECRET matches your Supabase project.",
+                    token_alg, JWT_ALGORITHMS,
+                )
             payload = jwt.decode(
                 token, SUPABASE_JWT_SECRET,
                 algorithms=JWT_ALGORITHMS,
