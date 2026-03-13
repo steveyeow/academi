@@ -163,6 +163,8 @@ async function signUpWithEmail(email, password) {
 
 async function signOut() {
   if (!supabaseClient) return;
+  const menu = document.getElementById('sidebar-user-menu');
+  if (menu) menu.classList.remove('open');
   await supabaseClient.auth.signOut();
   currentUser = null;
   authToken = null;

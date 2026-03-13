@@ -295,14 +295,6 @@ body {
 .sidebar-minds-link:hover { color: var(--text); background: rgba(128,128,128,0.08); }
 .sidebar-minds-link svg { flex-shrink: 0; }
 
-/* Profile row in sidebar bottom */
-.sidebar-profile-row {
-  display: flex; align-items: center; gap: 10px;
-  text-decoration: none; color: var(--text);
-  padding: 6px 4px; border-radius: 10px;
-  transition: background 0.15s; cursor: pointer;
-}
-.sidebar-profile-row:hover { background: rgba(128,128,128,0.08); }
 .profile-info {
   display: flex; flex-direction: column; min-width: 0;
 }
