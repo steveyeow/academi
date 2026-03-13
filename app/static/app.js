@@ -316,16 +316,18 @@ function renderSubscriptionPage() {
     const freeFeatures = [
       'Chat with any book in your library',
       'Four-layer answers: text, metadata, web, LLM',
-      'Talk with great minds',
+      'Great minds auto-join your first chat',
       'Discover topics and books',
       'Upload your own books (PDF / TXT)',
-      'Limited daily usage',
     ];
     const proFeatures = [
       'Everything in Free',
-      'Much higher daily limits',
+      'Great minds join every conversation',
+      'Invite & chat one-on-one with minds',
+      'Invite famous thinkers by name',
       'Create minds from any source',
-      'Expand the great minds network',
+      'Discover & expand the minds network',
+      'Higher daily usage limits',
       'Priority access',
     ];
     const featureRow = (text, isPro) => `<div class="sub-feature-row"><span class="sub-feature-check ${isPro ? 'pro-check' : ''}">\u2713</span><span class="sub-feature-label">${esc(text)}</span></div>`;
@@ -1343,6 +1345,11 @@ function navigate() {
   } else {
     appLayout.classList.remove('landing-active');
   }
+  if (route.page === 'login') {
+    appLayout.classList.add('login-active');
+  } else {
+    appLayout.classList.remove('login-active');
+  }
 
   switch (route.page) {
     case 'landing':
@@ -1360,6 +1367,11 @@ function navigate() {
     case 'login': renderLoginPage(); break;
     case 'subscription': renderSubscriptionPage(); break;
     case 'mind':
+      if (!isProUser()) {
+        showUpgradeModal({ message: 'Chat one-on-one with great minds — upgrade to Pro for full access.' });
+        window.location.hash = '#/minds';
+        return;
+      }
       currentMindId = route.id;
       renderMindDetail(route.id);
       break;
@@ -2392,7 +2404,10 @@ function renderLibraryGrid() {
         </div>
         <div class="card-body"><h3 class="card-title" style="color:var(--text-muted)">Discover more</h3><p class="card-author">${esc(label)}</p></div>
       </div>`);
-    document.getElementById('discover-more-card').addEventListener('click', () => discoverMore(topics));
+    document.getElementById('discover-more-card').addEventListener('click', () => {
+      if (!isProUser()) { showUpgradeModal({ message: 'Discover new topics and expand your library with Pro.' }); return; }
+      discoverMore(topics);
+    });
   }
 }
 
@@ -3405,6 +3420,7 @@ function _renderMindsGraph() {
       if (btn) {
         btn.addEventListener('click', (ev) => {
           ev.stopPropagation();
+          if (!isProUser()) { showUpgradeModal({ message: 'Discover related minds and expand the network with Pro.' }); return; }
           _expandFromNode(n);
           tooltip.classList.add('hidden');
           _tooltipNode = null;
@@ -3448,6 +3464,7 @@ function _renderMindsGraph() {
     const n = _getNodeAt(e.clientX - rect.left, e.clientY - rect.top);
     if (!n) return;
     if (n._isAdd) {
+      if (!isProUser()) { showUpgradeModal({ message: 'Discover and expand the great minds network with Pro.' }); return; }
       if (addBusy) return;
       addBusy = true;
       tooltip.classList.add('hidden');
@@ -3477,6 +3494,7 @@ function _renderMindsGraph() {
       addBusy = false;
       return;
     }
+    if (!isProUser()) { showUpgradeModal({ message: 'Chat one-on-one with great minds like ' + n.name + ' with Pro.' }); return; }
     window.location.hash = '#/mind/' + n.id;
   });
 
@@ -3864,7 +3882,11 @@ async function init() {
   chatUploadInput.addEventListener('change', () => { if (chatUploadInput.files.length) { handleFileUpload(chatUploadInput.files, null); chatUploadInput.value = ''; } });
 
   // Chat minds button → minds popover
-  document.getElementById('chat-minds-btn').addEventListener('click', e => { e.stopPropagation(); toggleMindPopover('chat-minds-popover', 'popover-mind-list', 'popover-no-minds'); });
+  document.getElementById('chat-minds-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    if (!isProUser()) { showUpgradeModal({ message: 'Invite great minds to your conversations with Pro. They\'ll join your discussions and share their unique perspectives.' }); return; }
+    toggleMindPopover('chat-minds-popover', 'popover-mind-list', 'popover-no-minds');
+  });
   document.addEventListener('click', e => {
     document.querySelectorAll('.composer-popover').forEach(pop => {
       if (!pop.classList.contains('hidden') && !pop.contains(e.target) && !e.target.closest('.composer-icon-btn')) {
@@ -3915,8 +3937,14 @@ async function init() {
   document.getElementById('minds-search').addEventListener('input', e => {
     _applyGraphHighlight(e.target.value.trim());
   });
-  document.getElementById('minds-add-btn').addEventListener('click', showAddMindDialog);
-  document.getElementById('minds-create-btn').addEventListener('click', showCreateMindDialog);
+  document.getElementById('minds-add-btn').addEventListener('click', () => {
+    if (!isProUser()) { showUpgradeModal({ message: 'Invite famous thinkers like Socrates or Einstein to your network with Pro.' }); return; }
+    showAddMindDialog();
+  });
+  document.getElementById('minds-create-btn').addEventListener('click', () => {
+    if (!isProUser()) { showUpgradeModal({ message: 'Create custom minds from any source — Twitter profiles, blogs, or your own content — with Pro.' }); return; }
+    showCreateMindDialog();
+  });
 
   // Mind chat
   const mindInput = document.getElementById('mind-chat-input');
