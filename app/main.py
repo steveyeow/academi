@@ -353,36 +353,46 @@ def _process_recommendations(text: str) -> None:
 
 # ─── Startup ───
 
-def _seed_minds() -> None:
-    """Background task: pre-generate seed minds on first startup."""
+_SEED_BATCH_SIZE = int(os.getenv("SEED_BATCH_SIZE", "3"))
+
+
+def _seed_minds_batch(batch_size: int = _SEED_BATCH_SIZE) -> int:
+    """Seed up to `batch_size` missing minds synchronously. Returns count seeded."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     pending = []
     for seed in SEED_MINDS:
-        existing = find_mind_by_name(seed["name"])
-        if existing:
+        if find_mind_by_name(seed["name"]):
             continue
         pending.append(seed)
+        if len(pending) >= batch_size:
+            break
 
     if not pending:
-        log.info("All %d seed minds already exist.", len(SEED_MINDS))
-        return
+        return 0
 
-    log.info("Seeding %d new minds (out of %d total)…", len(pending), len(SEED_MINDS))
+    log.info("Seeding batch of %d minds…", len(pending))
+    seeded = 0
 
     def _gen(seed: dict) -> str:
         get_or_create_mind(seed["name"], era=seed["era"], domain=seed["domain"])
         return seed["name"]
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=min(len(pending), 3)) as pool:
         futures = {pool.submit(_gen, s): s["name"] for s in pending}
         for fut in as_completed(futures):
             name = futures[fut]
             try:
                 fut.result()
+                seeded += 1
                 log.info("Seeded mind: %s", name)
             except Exception as exc:
                 log.warning("Failed to seed mind %s: %s", name, exc)
+
+    return seeded
+
+
+_IS_SERVERLESS = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
 
 
 @app.on_event("startup")
@@ -392,14 +402,13 @@ def on_startup() -> None:
         config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     init_db()
 
-    # Pre-generate seed minds in background
-    t_minds = threading.Thread(target=_seed_minds, daemon=True)
-    t_minds.start()
-
-    # Start discovery daemon if enabled
-    if DISCOVERY_INTERVAL > 0:
-        t = threading.Thread(target=_discovery_loop, daemon=True)
-        t.start()
+    if not _IS_SERVERLESS:
+        # Traditional server: use background threads as before
+        t_minds = threading.Thread(target=lambda: _seed_minds_batch(len(SEED_MINDS)), daemon=True)
+        t_minds.start()
+        if DISCOVERY_INTERVAL > 0:
+            t = threading.Thread(target=_discovery_loop, daemon=True)
+            t.start()
 
 
 @app.on_event("shutdown")
@@ -494,6 +503,43 @@ def api_search_book(payload: SearchBookRequest, request: Request, background_tas
         if agent and agent["status"] == "catalog":
             background_tasks.add_task(_learn_agent, agent_id)
     return {"books": results, "usage": _usage_dict(result)}
+
+
+# ─── Cron endpoints (Vercel Cron / external scheduler) ───
+
+_CRON_SECRET = os.getenv("CRON_SECRET", "")
+
+
+def _verify_cron(request: Request) -> None:
+    """Verify the request comes from Vercel Cron or an authorized caller."""
+    if _CRON_SECRET and request.headers.get("authorization") != f"Bearer {_CRON_SECRET}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+@app.get("/api/cron/discover")
+def api_cron_discover(request: Request, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    """Cron-triggered book discovery. Replaces the daemon discovery loop."""
+    _verify_cron(request)
+    agents = list_agents()
+    if not agents:
+        return {"status": "skip", "reason": "no agents yet"}
+    _discover_books()
+    # Trigger learning for any new catalog agents
+    for a in list_agents():
+        if a["status"] == "catalog":
+            background_tasks.add_task(_learn_agent, a["id"])
+    return {"status": "ok"}
+
+
+@app.get("/api/cron/seed-minds")
+def api_cron_seed_minds(request: Request) -> dict[str, Any]:
+    """Cron-triggered mind seeding. Seeds a batch of missing minds."""
+    _verify_cron(request)
+    existing_count = len(list_minds())
+    if existing_count >= len(SEED_MINDS):
+        return {"status": "complete", "total": existing_count}
+    seeded = _seed_minds_batch(_SEED_BATCH_SIZE)
+    return {"status": "ok", "seeded": seeded, "total": existing_count + seeded}
 
 
 # ─── Pro config endpoint ───
@@ -1033,6 +1079,12 @@ class PanelChatRequest(BaseModel):
 @app.get("/api/minds")
 def api_list_minds() -> list[dict[str, Any]]:
     minds = list_minds()
+    # Lazy seeding: if not all seed minds exist yet, seed a small batch synchronously
+    # so the data is persisted before the serverless function exits
+    if _IS_SERVERLESS and len(minds) < len(SEED_MINDS):
+        seeded = _seed_minds_batch(_SEED_BATCH_SIZE)
+        if seeded:
+            minds = list_minds()
     for m in minds:
         m.pop("persona", None)
     return minds

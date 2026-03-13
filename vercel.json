@@ -4,5 +4,9 @@
   ],
   "routes": [
     { "src": "/(.*)", "dest": "app/main.py" }
+  ],
+  "crons": [
+    { "path": "/api/cron/seed-minds", "schedule": "*/10 * * * *" },
+    { "path": "/api/cron/discover", "schedule": "0 */6 * * *" }
   ]
 }
