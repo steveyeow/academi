@@ -353,7 +353,7 @@ def _process_recommendations(text: str) -> None:
 
 # ─── Startup ───
 
-_SEED_BATCH_SIZE = int(os.getenv("SEED_BATCH_SIZE", "3"))
+_SEED_BATCH_SIZE = int(os.getenv("SEED_BATCH_SIZE", "10"))
 
 
 def _seed_minds_batch(batch_size: int = _SEED_BATCH_SIZE) -> int:
@@ -533,12 +533,13 @@ def api_cron_discover(request: Request, background_tasks: BackgroundTasks) -> di
 
 @app.get("/api/cron/seed-minds")
 def api_cron_seed_minds(request: Request) -> dict[str, Any]:
-    """Cron-triggered mind seeding. Seeds a batch of missing minds."""
+    """Cron-triggered mind seeding. Seeds all remaining minds (runs daily on Hobby)."""
     _verify_cron(request)
     existing_count = len(list_minds())
     if existing_count >= len(SEED_MINDS):
         return {"status": "complete", "total": existing_count}
-    seeded = _seed_minds_batch(_SEED_BATCH_SIZE)
+    remaining = len(SEED_MINDS) - existing_count
+    seeded = _seed_minds_batch(remaining)
     return {"status": "ok", "seeded": seeded, "total": existing_count + seeded}
 
 
