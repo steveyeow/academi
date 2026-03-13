@@ -226,6 +226,11 @@ body {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   justify-content: center;
 }
+.app-layout.sidebar-collapsed .sidebar-user-menu {
+  position: fixed;
+  bottom: auto;
+  left: 58px;
+}
 
 .sidebar-header {
   display: flex; align-items: center; justify-content: space-between;
