@@ -82,6 +82,11 @@ if os.getenv("ENABLE_AUTH"):
 if os.getenv("ENABLE_AUTH"):
     from .core.db import get_user as _get_user
 
+    _stripe_mod = None
+    if os.getenv("STRIPE_SECRET_KEY"):
+        import stripe as _stripe_mod
+        _stripe_mod.api_key = os.getenv("STRIPE_SECRET_KEY")
+
     @app.get("/api/pro/subscription")
     async def get_subscription(request: Request):
         user_id = getattr(request.state, "user_id", None)
@@ -91,17 +96,15 @@ if os.getenv("ENABLE_AUTH"):
         if not user:
             return {"tier": "free", "subscription": None}
         sub_info = None
-        if user.get("stripe_subscription_id") and os.getenv("STRIPE_SECRET_KEY"):
+        if user.get("stripe_subscription_id") and _stripe_mod:
             try:
-                import stripe as _stripe
-                _stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-                sub = _stripe.Subscription.retrieve(user["stripe_subscription_id"])
+                sub = _stripe_mod.Subscription.retrieve(user["stripe_subscription_id"])
                 sub_info = {
                     "status": sub.status,
                     "current_period_end": sub.current_period_end,
                     "cancel_at_period_end": sub.cancel_at_period_end,
                 }
-            except Exception:
+            except _stripe_mod.error.StripeError:
                 pass
         return {
             "tier": user.get("tier", "free"),
