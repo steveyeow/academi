@@ -322,6 +322,7 @@ function renderSubscriptionPage() {
     ];
     const proFeatures = [
       'Everything in Free',
+      'Add more books in chat & library',
       'Great minds continuously join chats',
       'Invite & chat one-on-one with minds',
       'Invite famous thinkers by name',
