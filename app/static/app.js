@@ -2764,7 +2764,7 @@ function renderSelectedChips() {
   });
   const homeInput = document.getElementById('home-input');
   if (homeInput) {
-    homeInput.placeholder = (selectedBooks.size || selectedMinds.size) ? 'Ask your question...' : 'Chat with books and great minds — ask anything...';
+    homeInput.placeholder = (selectedBooks.size || selectedMinds.size) ? 'Ask your question...' : 'Ask about books or topics — great minds will join in...';
   }
   // Re-render starters to match selected books
   if (getRoute().page === 'home') renderStarters();
