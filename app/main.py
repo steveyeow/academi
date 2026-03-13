@@ -509,6 +509,31 @@ def pro_config() -> dict[str, Any]:
     }
 
 
+@app.get("/api/pro/debug-token")
+def debug_token(request: Request) -> dict[str, Any]:
+    """Temporary debug endpoint — inspect JWT claims without verification."""
+    import jwt as _jwt
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        return {"error": "no token"}
+    token = auth[7:]
+    try:
+        header = _jwt.get_unverified_header(token)
+        claims = _jwt.decode(token, options={"verify_signature": False})
+        secret = os.getenv("SUPABASE_JWT_SECRET", "")
+        return {
+            "header": header,
+            "claims": {k: v for k, v in claims.items() if k != "sub"},
+            "secret_len": len(secret),
+            "secret_stripped_len": len(secret.strip()),
+            "secret_first4": secret.strip()[:4],
+            "has_aud": "aud" in claims,
+            "aud_value": claims.get("aud"),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ─── Agent endpoints ───
 
 @app.get("/api/agents")
