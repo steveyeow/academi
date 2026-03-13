@@ -528,8 +528,19 @@ def api_cron_seed_minds(request: Request) -> dict[str, Any]:
     existing_count = len(list_minds())
     if existing_count >= len(SEED_MINDS):
         return {"status": "complete", "total": existing_count}
-    seeded = _seed_minds_batch(_SEED_BATCH_SIZE)
-    return {"status": "ok", "seeded": seeded, "total": existing_count + seeded}
+    # Try seeding one mind and capture any error for diagnostics
+    seed = None
+    for s in SEED_MINDS:
+        if not find_mind_by_name(s["name"]):
+            seed = s
+            break
+    if not seed:
+        return {"status": "complete", "total": existing_count}
+    try:
+        get_or_create_mind(seed["name"], era=seed["era"], domain=seed["domain"])
+        return {"status": "ok", "seeded": 1, "total": existing_count + 1, "mind": seed["name"]}
+    except Exception as exc:
+        return {"status": "error", "total": existing_count, "mind": seed["name"], "error": str(exc)}
 
 
 # ─── Pro config endpoint ───
