@@ -297,11 +297,11 @@ function renderSubscriptionPage() {
     try { sub = await api('/api/pro/subscription'); } catch {}
     const isPro = sub.tier === 'pro';
     const freeFeatures = [
-      { label: 'Chat messages', value: '20 / day' },
-      { label: 'Mind conversations', value: '10 / day' },
-      { label: 'Topic & book discovery', value: '5 / day' },
-      { label: 'Invite new minds to the network', value: '3 / day' },
-      { label: 'Upload books (PDF / TXT)', value: '3 / day' },
+      { label: 'Chat messages', value: '15 / day' },
+      { label: 'Mind conversations', value: '5 / day' },
+      { label: 'Topic & book discovery', value: '3 / day' },
+      { label: 'Invite new minds to the network', value: '2 / day' },
+      { label: 'Upload books (PDF / TXT)', value: '2 / day' },
       { label: 'Create mind from any source', value: '1 / day' },
     ];
     const proFeatures = [

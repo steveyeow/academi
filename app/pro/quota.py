@@ -6,11 +6,11 @@ from ..core.db import count_usage_today, record_usage
 
 QUOTA_LIMITS = {
     "free": {
-        "chat": 20,
-        "mind_chat": 10,
-        "discover": 5,
-        "generate_mind": 3,
-        "upload": 3,
+        "chat": 15,
+        "mind_chat": 5,
+        "discover": 3,
+        "generate_mind": 2,
+        "upload": 2,
         "custom_minds": 1,
     },
     "pro": {
