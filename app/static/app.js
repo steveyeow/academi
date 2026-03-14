@@ -315,7 +315,7 @@ function renderSubscriptionPage() {
       'Discover more books in chat & library',
       'Great minds continuously join chats',
       'Invite great minds into your chats',
-      'Create minds from any source',
+      'Upload your own minds or from any source',
       'Discover & expand the minds network',
       'Higher daily usage limits',
       'Priority access',
@@ -3792,7 +3792,7 @@ function showCreateMindDialog() {
       await loadMinds();
       if (getRoute().page === 'minds') _renderMindsGraph();
     } catch (err) {
-      btn.textContent = 'Create Mind';
+      btn.textContent = 'Upload & Connect';
       btn.disabled = false;
       alert('Failed: ' + err.message);
     }
@@ -4034,22 +4034,22 @@ async function init() {
 }
 
 function startGreetingIconSwap() {
+  const intervals = [2500, 4000, 6000];
+  let tick = 0;
+  function doSwap() {
+    const wraps = document.querySelectorAll('.greeting-logo-wrap');
+    wraps.forEach(wrap => {
+      if (wrap.offsetParent === null) return;
+      wrap.classList.add('bounce');
+      setTimeout(() => wrap.classList.toggle('swap'), 200);
+      wrap.addEventListener('animationend', () => wrap.classList.remove('bounce'), { once: true });
+    });
+  }
   function scheduleNext() {
-    const delay = 6000 + Math.random() * 12000;
-    setTimeout(() => {
-      const wraps = document.querySelectorAll('.greeting-logo-wrap');
-      wraps.forEach(wrap => {
-        if (wrap.offsetParent === null) return;
-        wrap.classList.add('bounce');
-        setTimeout(() => {
-          wrap.classList.toggle('swap');
-        }, 200);
-        wrap.addEventListener('animationend', () => {
-          wrap.classList.remove('bounce');
-        }, { once: true });
-      });
-      scheduleNext();
-    }, delay);
+    const delay = tick < intervals.length
+      ? intervals[tick++]
+      : 8000 + Math.random() * 12000;
+    setTimeout(() => { doSwap(); scheduleNext(); }, delay);
   }
   scheduleNext();
 }
