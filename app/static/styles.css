@@ -441,7 +441,7 @@ body {
   align-items: stretch;
   justify-content: center;
   padding: 0 24px;
-  max-width: 600px;
+  max-width: 660px;
   width: 100%; margin: 0 auto;
   margin-top: -80px;
 }
@@ -1189,20 +1189,22 @@ body {
 .popover-pro-badge {
   font-size: 9px;
   font-weight: 700;
+  font-family: inherit;
   letter-spacing: 0.03em;
-  padding: 2px 7px;
+  padding: 2px 8px;
+  border: none;
   border-radius: 99px;
   background: var(--accent);
   color: #fff;
   vertical-align: middle;
-  margin-left: 4px;
+  margin-left: 6px;
   cursor: pointer;
   transition: all 0.15s;
+  line-height: 1.4;
 }
 .popover-pro-badge:hover {
-  opacity: 0.8;
+  opacity: 0.85;
   filter: brightness(1.15);
-  transform: scale(1.08);
 }
 .popover-mind-avatar {
   width: 22px; height: 22px; border-radius: 50%;
