@@ -141,44 +141,7 @@ The design started from a simple insight: Richard Feynman invented [Feynman diag
 
 We explored several directions built on this idea:
 
-<table>
-<tr>
-<td align="center" width="50%">
-<strong>1 — Classic Feynman Diagram</strong><br><br>
-<img src="app/static/logo-concept-1-feynman-diagram.svg" width="64" height="64"><br>
-<sub>Two vertices connected by a wavy propagator</sub>
-</td>
-<td align="center" width="50%">
-<strong>2 — Book → Diagram</strong><br><br>
-<img src="app/static/logo-concept-2-book-diagram.svg" width="64" height="64"><br>
-<sub>Open book whose spine becomes a vertex</sub>
-</td>
-</tr>
-<tr>
-<td align="center">
-<strong>3 — The "F" Diagram</strong><br><br>
-<img src="app/static/logo-concept-3-mind-network.svg" width="64" height="64"><br>
-<sub>The letter F built from diagram elements</sub>
-</td>
-<td align="center">
-<strong>4 — Chat Bubble Diagram</strong><br><br>
-<img src="app/static/logo-concept-4-chat-diagram.svg" width="64" height="64"><br>
-<sub>Feynman diagram inside a speech bubble</sub>
-</td>
-</tr>
-<tr>
-<td align="center">
-<strong>5 — Vertex Person</strong><br><br>
-<img src="app/static/logo-concept-5-vertex.svg" width="64" height="64"><br>
-<sub>The 人 (person) shape with wavy propagator</sub>
-</td>
-<td align="center">
-<strong>8 — Pure Person + Idea ✓</strong><br><br>
-<img src="app/static/logo-concept-8-elegant.svg" width="64" height="64"><br>
-<sub><strong>Selected</strong> — person, vertex dot, wavy propagator</sub>
-</td>
-</tr>
-</table>
+<img src="docs/logo-concepts-grid.png" alt="Logo design exploration: 6 concepts from Classic Feynman Diagram to the final Pure Person + Idea mark" width="800" />
 
 We chose Concept 8 — the purest form of the **人** shape (the Chinese character for "person"): just two lines forming a wide stance, a vertex dot, and a single wavy propagator rising upward. Three elements, nothing else. It reads as person, book, tree of knowledge, and Feynman diagram — four meanings in one mark, with maximum clarity at every size.
 

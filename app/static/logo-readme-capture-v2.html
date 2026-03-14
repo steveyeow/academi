@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Logo Concepts — README Capture</title>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: #f8f7f4;
+    color: #1d1d1f;
+    padding: 28px;
+    width: 780px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 20px 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .card.final {
+    border: 2px solid #34c759;
+    position: relative;
+  }
+  .card.final::after {
+    content: 'SELECTED FINAL';
+    position: absolute;
+    top: -10px;
+    right: 16px;
+    background: #34c759;
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 10px;
+    letter-spacing: 0.05em;
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .card-num {
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+    background: #1d1d1f;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .card-title {
+    font-family: 'Libre Baskerville', serif;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 4px;
+  }
+  .tag.iconic { background: #e8f2fe; color: #0071e3; }
+  .tag.narrative { background: #e3f8f0; color: #15803d; }
+  .tag.recommended { background: #fef3cd; color: #92400e; }
+  .tag.conversational { background: #fce7f3; color: #9d174d; }
+  .preview-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 20px;
+    padding: 20px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,0.04);
+    background: #fafafa;
+    margin: 10px 0 8px;
+  }
+  .preview-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+  .size-label {
+    font-size: 10px;
+    color: #999;
+  }
+  .desc {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #4a4a4f;
+  }
+</style>
+</head>
+<body>
+
+<div class="grid">
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-num">1</span>
+      <span class="card-title">Classic Feynman Diagram</span>
+    </div>
+    <span class="tag iconic">Iconic</span>
+    <div class="preview-row">
+      <div class="preview-item">
+        <img src="logo-concept-1-feynman-diagram.svg" width="80" height="80">
+        <span class="size-label">80px</span>
+      </div>
+      <div class="preview-item">
+        <img src="logo-concept-1-feynman-diagram.svg" width="40" height="40">
+        <span class="size-label">40px</span>
+      </div>
+      <div class="preview-item">
+        <img src="logo-concept-1-feynman-diagram.svg" width="24" height="24">
+        <span class="size-label">24px</span>
+      </div>
+    </div>
+    <p class="desc">Two vertices connected by a wavy propagator — the classic Feynman diagram representing knowledge exchange.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-num">2</span>
+      <span class="card-title">Book → Diagram</span>
+    </div>
+    <span class="tag narrative">Narrative</span>
+    <div class="preview-row">
+      <div class="preview-item">
+        <img src="logo-concept-2-book-diagram.svg" width="80" height="80">
+        <span class="size-label">80px</span>
+      </div>
+      <div class="preview-item">
+        <img src="logo-concept-2-book-diagram.svg" width="40" height="40">
+        <span class="size-label">40px</span>
+      </div>
+    </div>
+    <p class="desc">Open book whose spine becomes a vertex. Knowledge radiates upward as particle lines diverge toward separate mind-dots.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-num">3</span>
+      <span class="card-title">The "F" Diagram</span>
+    </div>
+    <span class="tag recommended">Recommended</span>
+    <div class="preview-row">
+      <div class="preview-item">
+        <img src="logo-concept-3-mind-network.svg" width="80" height="80">
+        <span class="size-label">80px</span>
+      </div>
+      <div class="preview-item">
+        <img src="logo-concept-3-mind-network.svg" width="40" height="40">
+        <span class="size-label">40px</span>
+      </div>
+      <div class="preview-item">
+        <img src="logo-concept-3-mind-network.svg" width="24" height="24">
+        <span class="size-label">24px</span>
+      </div>
+    </div>
+    <p class="desc">The letter "F" constructed from Feynman diagram elements: a vertical fermion line as the stem, a wavy propagator as the top bar.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-num">4</span>
+      <span class="card-title">Chat Bubble Diagram</span>
+    </div>
+    <span class="tag conversational">Conversational</span>
+    <div class="preview-row">
+      <div class="preview-item">
+        <img src="logo-concept-4-chat-diagram.svg" width="80" height="80">
+        <span class="size-label">80px</span>
+      </div>
+      <div class="preview-item">
+        <img src="logo-concept-4-chat-diagram.svg" width="40" height="40">
+        <span class="size-label">40px</span>
+      </div>
+    </div>
+    <p class="desc">A speech bubble containing a Feynman diagram — conversation and physics fused. Emphasizes the "chat" aspect of the product.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-num">5</span>
+      <span class="card-title">Vertex Person</span>
+    </div>
+    <span class="tag iconic">Minimal</span>
+    <div class="preview-row">
+      <div class="preview-item">
+        <img src="logo-concept-5-vertex.svg" width="80" height="80">
+        <span class="size-label">80px</span>
+      </div>
+      <div class="preview-item">
+        <img src="logo-concept-5-vertex.svg" width="40" height="40">
+        <span class="size-label">40px</span>
+      </div>
+      <div class="preview-item">
+        <img src="logo-concept-5-vertex.svg" width="24" height="24">
+        <span class="size-label">24px</span>
+      </div>
+    </div>
+    <p class="desc">The 人 (person) shape — two fermion lines converge at a vertex, with a wavy propagator rising upward like a thought ascending.</p>
+  </div>
+
+  <div class="card final">
+    <div class="card-header">
+      <span class="card-num">8</span>
+      <span class="card-title">Pure Person + Idea</span>
+    </div>
+    <span class="tag recommended">Selected Final</span>
+    <div class="preview-row">
+      <div class="preview-item">
+        <img src="logo-concept-8-elegant.svg" width="80" height="80">
+        <span class="size-label">80px</span>
+      </div>
+      <div class="preview-item">
+        <img src="logo-concept-8-elegant.svg" width="40" height="40">
+        <span class="size-label">40px</span>
+      </div>
+      <div class="preview-item">
+        <img src="logo-concept-8-elegant.svg" width="24" height="24">
+        <span class="size-label">24px</span>
+      </div>
+    </div>
+    <p class="desc">The purest form — just a person silhouette, a vertex dot, and a wavy propagator. Three elements, nothing else. Maximum clarity at every size.</p>
+  </div>
+
+</div>
+
+</body>
+</html>
