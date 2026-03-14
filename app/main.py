@@ -26,22 +26,29 @@ from .core.catalog import (
 )
 from .core.db import (
     add_message,
+    add_session_message,
     create_agent,
     create_catalog_agent,
+    create_chat_session,
     create_vote,
     delete_agent,
+    delete_chat_session,
     find_agent_by_name,
     find_mind_by_name,
     get_agent,
+    get_chat_session,
     get_mind,
     init_db,
     list_agents,
+    list_chat_sessions,
     list_messages,
     list_minds,
     list_questions,
+    list_session_messages,
     list_votes,
     update_agent_meta,
     update_agent_status,
+    update_chat_session,
     upvote,
 )
 from .core.indexer import index_text
@@ -387,7 +394,7 @@ _IS_SERVERLESS = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME
 
 @app.on_event("startup")
 def on_startup() -> None:
-    if not os.getenv("DATABASE_URL"):
+    if not (os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")):
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
         config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     init_db()
@@ -989,6 +996,79 @@ def api_get_messages(agent_id: str) -> list[dict[str, Any]]:
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     return list_messages(agent_id, limit=50)
+
+
+# ─── Chat sessions endpoints ───
+
+class CreateSessionRequest(BaseModel):
+    title: str = "New chat"
+    session_type: str = "chat"
+    mind_id: str | None = None
+    meta: dict[str, Any] | None = None
+
+
+class UpdateSessionRequest(BaseModel):
+    title: str | None = None
+    meta: dict[str, Any] | None = None
+
+
+class AddSessionMessageRequest(BaseModel):
+    role: str = Field(..., min_length=1)
+    content: str = ""
+    meta: dict[str, Any] | None = None
+
+
+@app.get("/api/sessions")
+def api_list_sessions() -> list[dict[str, Any]]:
+    return list_chat_sessions()
+
+
+@app.post("/api/sessions")
+def api_create_session(payload: CreateSessionRequest) -> dict[str, Any]:
+    return create_chat_session(
+        title=payload.title, session_type=payload.session_type,
+        mind_id=payload.mind_id, meta=payload.meta,
+    )
+
+
+@app.get("/api/sessions/{session_id}")
+def api_get_session(session_id: str) -> dict[str, Any]:
+    session = get_chat_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
+
+@app.patch("/api/sessions/{session_id}")
+def api_update_session(session_id: str, payload: UpdateSessionRequest) -> dict[str, Any]:
+    session = get_chat_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    update_chat_session(session_id, title=payload.title, meta=payload.meta)
+    return get_chat_session(session_id)
+
+
+@app.delete("/api/sessions/{session_id}")
+def api_delete_session(session_id: str) -> dict[str, Any]:
+    if not delete_chat_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"status": "deleted"}
+
+
+@app.get("/api/sessions/{session_id}/messages")
+def api_list_session_messages(session_id: str) -> list[dict[str, Any]]:
+    session = get_chat_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return list_session_messages(session_id)
+
+
+@app.post("/api/sessions/{session_id}/messages")
+def api_add_session_message(session_id: str, payload: AddSessionMessageRequest) -> dict[str, Any]:
+    session = get_chat_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return add_session_message(session_id, role=payload.role, content=payload.content, meta=payload.meta)
 
 
 # ─── Vote endpoints (with auto-creation threshold) ───

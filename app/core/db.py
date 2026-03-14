@@ -9,7 +9,7 @@ from typing import Any, Iterable
 
 from .config import DB_PATH, DATA_DIR
 
-_RAW_DATABASE_URL = os.getenv("DATABASE_URL", "")
+_RAW_DATABASE_URL = os.getenv("DATABASE_URL", "") or os.getenv("POSTGRES_URL", "")
 
 
 def _clean_dsn(url: str) -> str:
@@ -216,6 +216,30 @@ def init_db() -> None:
             _execute(conn, "CREATE INDEX IF NOT EXISTS idx_mind_memories_mind ON mind_memories(mind_id)")
             _execute(conn, "CREATE INDEX IF NOT EXISTS idx_mind_memories_user ON mind_memories(mind_id, user_id)")
 
+            # Chat sessions
+            _execute(conn, """
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL DEFAULT 'New chat',
+                    session_type TEXT NOT NULL DEFAULT 'chat',
+                    mind_id TEXT,
+                    meta_json TEXT,
+                    updated_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            _execute(conn, """
+                CREATE TABLE IF NOT EXISTS session_messages (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL DEFAULT '',
+                    meta_json TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            _execute(conn, "CREATE INDEX IF NOT EXISTS idx_session_messages_session ON session_messages(session_id)")
+
             # Pro tables
             _execute(conn, """
                 CREATE TABLE IF NOT EXISTS users (
@@ -329,6 +353,31 @@ def init_db() -> None:
             """)
             _execute(conn, "CREATE INDEX IF NOT EXISTS idx_mind_memories_mind ON mind_memories(mind_id)")
             _execute(conn, "CREATE INDEX IF NOT EXISTS idx_mind_memories_user ON mind_memories(mind_id, user_id)")
+
+            # Chat sessions
+            _execute(conn, """
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL DEFAULT 'New chat',
+                    session_type TEXT NOT NULL DEFAULT 'chat',
+                    mind_id TEXT,
+                    meta_json TEXT,
+                    updated_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            _execute(conn, """
+                CREATE TABLE IF NOT EXISTS session_messages (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL DEFAULT '',
+                    meta_json TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+                )
+            """)
+            _execute(conn, "CREATE INDEX IF NOT EXISTS idx_session_messages_session ON session_messages(session_id)")
 
 
 def create_agent(name: str, agent_type: str, source: str | None, meta: dict[str, Any]) -> str:
@@ -648,6 +697,85 @@ def list_mind_memories(mind_id: str, user_id: str | None = None, limit: int = 20
                    ORDER BY created_at DESC LIMIT ?"""
             ), (mind_id, limit))
         return rows
+
+
+# ─── Chat sessions ───
+
+def create_chat_session(title: str = "New chat", session_type: str = "chat",
+                        mind_id: str | None = None, meta: dict[str, Any] | None = None) -> dict[str, Any]:
+    session_id = str(uuid.uuid4())
+    now = _utcnow()
+    with get_conn() as conn:
+        _execute(conn, _q(
+            "INSERT INTO chat_sessions (id, title, session_type, mind_id, meta_json, updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        ), (session_id, title, session_type, mind_id, json.dumps(meta or {}), now, now))
+    return {"id": session_id, "title": title, "session_type": session_type,
+            "mind_id": mind_id, "meta": meta or {}, "updated_at": now, "created_at": now}
+
+
+def list_chat_sessions() -> list[dict[str, Any]]:
+    with get_conn() as conn:
+        rows = _fetchall(conn, "SELECT * FROM chat_sessions ORDER BY updated_at DESC")
+        return [_row_to_session(r) for r in rows]
+
+
+def get_chat_session(session_id: str) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        row = _fetchone(conn, _q("SELECT * FROM chat_sessions WHERE id = ?"), (session_id,))
+        if not row:
+            return None
+        return _row_to_session(row)
+
+
+def update_chat_session(session_id: str, title: str | None = None,
+                        meta: dict[str, Any] | None = None) -> None:
+    with get_conn() as conn:
+        if title is not None:
+            _execute(conn, _q("UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?"),
+                     (title, _utcnow(), session_id))
+        if meta is not None:
+            _execute(conn, _q("UPDATE chat_sessions SET meta_json = ?, updated_at = ? WHERE id = ?"),
+                     (json.dumps(meta), _utcnow(), session_id))
+
+
+def delete_chat_session(session_id: str) -> bool:
+    with get_conn() as conn:
+        _execute(conn, _q("DELETE FROM session_messages WHERE session_id = ?"), (session_id,))
+        cur = _execute(conn, _q("DELETE FROM chat_sessions WHERE id = ?"), (session_id,))
+        return cur.rowcount > 0
+
+
+def _row_to_session(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "session_type": row.get("session_type", "chat"),
+        "mind_id": row.get("mind_id"),
+        "meta": json.loads(row.get("meta_json") or "{}"),
+        "updated_at": row["updated_at"],
+        "created_at": row["created_at"],
+    }
+
+
+def add_session_message(session_id: str, role: str, content: str,
+                        meta: dict[str, Any] | None = None) -> dict[str, Any]:
+    msg_id = str(uuid.uuid4())
+    now = _utcnow()
+    with get_conn() as conn:
+        _execute(conn, _q(
+            "INSERT INTO session_messages (id, session_id, role, content, meta_json, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+        ), (msg_id, session_id, role, content, json.dumps(meta or {}), now))
+        _execute(conn, _q("UPDATE chat_sessions SET updated_at = ? WHERE id = ?"), (now, session_id))
+    return {"id": msg_id, "role": role, "content": content, "meta": meta or {}, "created_at": now}
+
+
+def list_session_messages(session_id: str) -> list[dict[str, Any]]:
+    with get_conn() as conn:
+        rows = _fetchall(conn, _q(
+            "SELECT id, role, content, meta_json, created_at FROM session_messages WHERE session_id = ? ORDER BY created_at ASC"
+        ), (session_id,))
+        return [{"id": r["id"], "role": r["role"], "content": r["content"],
+                 "meta": json.loads(r.get("meta_json") or "{}"), "created_at": r["created_at"]} for r in rows]
 
 
 # ─── Pro: User & Usage helpers ───

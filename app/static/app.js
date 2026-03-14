@@ -2369,9 +2369,9 @@ function handleHomeSend() {
   const input = document.getElementById('home-input');
   const msg = input.value.trim();
   if (!msg) return;
+  if (selectedMinds.size && !isProUser()) { showProOverlay(); return; }
   input.value = '';
   input.style.height = 'auto';
-  saveCurrentSession();
   currentSessionId = null;
   sendGlobalChat(msg);
 }
@@ -3728,7 +3728,15 @@ async function renderMindDetail(mindId) {
   const existingSession = chatSessions.find(s => s.mindId === mindId);
   if (existingSession) {
     currentSessionId = existingSession.id;
+    localStorage.setItem('currentSessionId', currentSessionId);
     activeMinds = new Map(existingSession.activeMinds || []);
+    // Load messages from DB if not cached
+    if (!existingSession.messages?.length) {
+      try {
+        const msgs = await api(`/api/sessions/${existingSession.id}/messages`);
+        existingSession.messages = msgs.map(m => ({ role: m.role, content: m.content, ...m.meta }));
+      } catch (e) { console.warn('Failed to load mind session messages:', e); }
+    }
     for (const m of existingSession.messages) {
       if (m.role === 'mind') {
         appendMindMsg(chatBox, m.mindName, m.content);
@@ -3744,13 +3752,13 @@ async function renderMindDetail(mindId) {
       }
     }
   } else {
-    saveCurrentSession();
-    const id = 's-' + (++sessionCounter);
-    const session = { id, title: `Chat with ${mind.name}`, messages: [], books: new Map(), activeMinds: new Map(), mindId, updatedAt: Date.now() };
-    chatSessions.unshift(session);
-    currentSessionId = id;
+    const session = await createSession(mindId);
+    session.title = `Chat with ${mind.name}`;
+    api(`/api/sessions/${session.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: session.title }),
+    }).catch(() => {});
     renderChatHistory();
-    persistSessions();
   }
 
   const color = mindColor(mind.name);
