@@ -184,16 +184,9 @@ We chose Concept 8 — the purest form of the **人** shape (the Chinese charact
 
 ### When Feynman's wavy propagator meets the Dao De Jing
 
-Claude's design instincts are genuinely world-class. I simply asked it to come up with a few logo concepts based on its understanding of the Feynman product — and it delivered five directions, all rooted in the visual language of Feynman diagrams: the wavy propagator (the squiggly line that carries force between particles).
+Claude's design ability is truly top-tier. I simply asked it to come up with a few logo versions based on its understanding of the Feynman product. It gave me five concepts, all inspired by the wavy propagator from Feynman diagrams. When I saw Concept 5, it immediately struck me as looking like **人** — the Chinese character for "person" — and from another angle, like a book placed face-down. Absolutely perfect.
 
-When I saw Concept 5, I immediately noticed it looks like **人** — the Chinese character for "person." Look again and it also reads as a book placed face-down, covers splayed open. A perfect fit.
-
-But there's a layer Claude itself may not have realized. In its description of Concept 2, it wrote: *"two fermion lines diverge toward separate mind-dots."* That phrase — two lines diverging from a single point, giving rise to something greater — echoes a passage from the *Dao De Jing*:
-
-> *"冲气以为和" — opposing forces blend into harmony.*
-> *"二生三，三生万物" — two gives birth to three, and three gives birth to the ten thousand things.*
-
-Two fermion lines (二) meet at a vertex and produce the wavy propagator (三) — from which all knowledge radiates outward (万物). Particle physics and ancient Chinese philosophy, saying the same thing in different languages, and an AI wove them together in a logo without being asked.
+What's more, in its explanation of Concept 2, Claude mentioned *"two fermion lines diverge toward separate mind-dots."* It probably didn't even realize it, but Concept 5 also echoes a passage from the *Dao De Jing*: *"冲气以为和，二生三，三生万物"* — opposing forces blend into harmony; two gives birth to three, and three gives birth to the ten thousand things.
 
 All concept SVGs are included in `app/static/` — run the app and visit `/static/logo-all-concepts.html` to preview them interactively.
 
