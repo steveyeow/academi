@@ -2327,6 +2327,7 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds) {
 
     for (const name of newJoinedNames) {
       appendJoinNotice(chatBox, [name]);
+      if (currentSessionId) _saveMessageToDB(currentSessionId, 'system-notice', '', { mindNames: [name] });
     }
 
     const history = [];
@@ -2353,11 +2354,11 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds) {
       for (const r of panelData.responses) {
         if (r.response && !r.response.startsWith('[')) {
           appendMindMsg(chatBox, r.mind_name, r.response);
+          if (currentSessionId) _saveMessageToDB(currentSessionId, 'mind', r.response, { mindName: r.mind_name });
         }
       }
       loadMinds();
     }
-    _saveMindSession(chatBox);
   } catch (err) {
     removeMindsLoading();
     console.log('Mind chat failed:', err.message);
@@ -2865,7 +2866,10 @@ function renderPopoverMindList(listId, emptyId) {
   const empty = document.getElementById(emptyId);
   if (!list || !empty) return;
   const pro = isProUser();
-  document.querySelectorAll('.popover-pro-badge').forEach(b => b.style.display = pro ? 'none' : '');
+  document.querySelectorAll('.popover-pro-badge').forEach(b => {
+    b.style.display = pro ? 'none' : '';
+    b.onclick = () => { closeAllPopovers(); showProOverlay(); };
+  });
   if (!allMinds.length) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
   empty.classList.add('hidden');
   const sorted = [...allMinds].sort((a, b) => a.name.localeCompare(b.name));

@@ -1190,12 +1190,19 @@ body {
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.03em;
-  padding: 1px 6px;
+  padding: 2px 7px;
   border-radius: 99px;
   background: var(--accent);
   color: #fff;
   vertical-align: middle;
   margin-left: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.popover-pro-badge:hover {
+  opacity: 0.8;
+  filter: brightness(1.15);
+  transform: scale(1.08);
 }
 .popover-mind-avatar {
   width: 22px; height: 22px; border-radius: 50%;
