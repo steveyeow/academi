@@ -904,6 +904,32 @@ body {
 }
 .chat-message.assistant {
   color: var(--text);
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.feynman-msg-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+  background: var(--accent);
+  color: #fff;
+}
+.feynman-msg-body {
+  flex: 1;
+  min-width: 0;
+}
+.feynman-msg-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1;
+  margin-bottom: 4px;
 }
 .msg-content p { margin: 0 0 8px; }
 .msg-content p:last-child { margin-bottom: 0; }

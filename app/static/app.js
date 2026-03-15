@@ -1831,10 +1831,16 @@ function appendMsg(container, role, text, sources, opts, hasMentions) {
   const webSrcs = opts?.webSources || [];
   const refs = opts?.references || [];
   if (role === 'assistant') {
+    const avatar = document.createElement('div');
+    avatar.className = 'feynman-msg-avatar';
+    avatar.innerHTML = `<svg width="18" height="18" viewBox="0 0 64 64" fill="none"><line x1="8" y1="58" x2="32" y2="30" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><line x1="56" y1="58" x2="32" y2="30" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="30" r="3.5" fill="currentColor"/><path d="M32,30 C26,24 38,18 32,12 C26,6 38,0 32,-4" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    el.appendChild(avatar);
+    const body = document.createElement('div');
+    body.className = 'feynman-msg-body';
+    body.innerHTML = `<div class="feynman-msg-name">Feynman</div>`;
     const content = document.createElement('div');
     content.className = 'msg-content';
     let html = renderMarkdown(text);
-    // Convert [1], [2], [1, 2] etc. to clickable citation superscripts
     if (refs.length || webSrcs.length) {
       html = html.replace(/\[(\d+(?:\s*,\s*\d+)*)\]/g, (match, nums) => {
         const indices = nums.split(/\s*,\s*/).map(n => parseInt(n, 10));
@@ -1851,8 +1857,8 @@ function appendMsg(container, role, text, sources, opts, hasMentions) {
       });
     }
     content.innerHTML = html;
-    el.appendChild(content);
-    // Bind cite-link clicks to scroll to reference
+    body.appendChild(content);
+    el.appendChild(body);
     content.querySelectorAll('.cite-link[data-ref]').forEach(a => {
       a.addEventListener('click', e => {
         e.preventDefault();
@@ -1865,6 +1871,7 @@ function appendMsg(container, role, text, sources, opts, hasMentions) {
   } else {
     el.textContent = text;
   }
+  const appendTarget = (role === 'assistant') ? el.querySelector('.feynman-msg-body') || el : el;
   // References (RAG chunk sources)
   if (refs.length) {
     const refsEl = document.createElement('div');
@@ -1873,7 +1880,7 @@ function appendMsg(container, role, text, sources, opts, hasMentions) {
       refs.map(r =>
         `<div class="ref-item" id="ref-${r.index}"><span class="ref-num">${r.index}</span><div class="ref-body"><span class="ref-book">${esc(r.book)}</span><span class="ref-snippet">${esc(r.snippet)}</span></div></div>`
       ).join('');
-    el.appendChild(refsEl);
+    appendTarget.appendChild(refsEl);
   }
   // Web sources (grounding citations)
   if (webSrcs.length) {
@@ -1888,7 +1895,7 @@ function appendMsg(container, role, text, sources, opts, hasMentions) {
       a.innerHTML = `<span class="web-source-num">${i + 1}</span> ${esc(src.title || src.url)}`;
       ws.appendChild(a);
     });
-    el.appendChild(ws);
+    appendTarget.appendChild(ws);
   }
   // Skill badge
   if (opts?.skillUsed && opts.skillUsed !== 'none') {
@@ -1896,7 +1903,7 @@ function appendMsg(container, role, text, sources, opts, hasMentions) {
     sb.className = 'skill-badge skill-' + opts.skillUsed;
     const labels = { rag: 'RAG', content_fetch: 'Web APIs', web_search: 'Web Search', llm_knowledge: 'LLM Knowledge' };
     sb.textContent = labels[opts.skillUsed] || opts.skillUsed;
-    el.appendChild(sb);
+    appendTarget.appendChild(sb);
   }
   // Token usage
   if (opts?.usage && opts.usage.total_tokens > 0) {
@@ -1905,7 +1912,7 @@ function appendMsg(container, role, text, sources, opts, hasMentions) {
     tu.className = 'token-usage';
     tu.textContent = `${u.total_tokens} tokens`;
     tu.title = `Input: ${u.input_tokens} · Output: ${u.output_tokens}`;
-    el.appendChild(tu);
+    appendTarget.appendChild(tu);
   }
   container.appendChild(el);
   container.scrollTop = container.scrollHeight;
@@ -2229,62 +2236,69 @@ async function sendGlobalChat(message) {
 
   try {
     const cleanMessage = mentionedNames.length ? stripMentions(message) : message;
-    const body = { message: cleanMessage };
     const agentIds = [];
     const bookContext = [];
     for (const [, book] of selectedBooks) {
       agentIds.push(book.agentId);
       bookContext.push({ title: book.title, author: book.author || '' });
     }
-    if (bookContext.length) {
-      body.agent_ids = agentIds;
-      body.book_context = bookContext;
+
+    const mentionOnly = mentionedNames.length > 0 && activeMinds.size > 0;
+
+    if (!mentionOnly) {
+      const body = { message: cleanMessage };
+      if (bookContext.length) {
+        body.agent_ids = agentIds;
+        body.book_context = bookContext;
+      }
+
+      const session = chatSessions.find(s => s.id === sentSessionId);
+      const history = (session?.messages || [])
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => ({ role: m.role, content: m.content }));
+      if (history.length) body.history = history;
+
+      const data = await api('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const sources = (data.sources || []).map(s => ({ id: s.agent_id, name: s.agent_name }));
+      const msgOpts = {};
+      if (data.web_sources?.length) msgOpts.webSources = data.web_sources;
+      if (data.grounded) msgOpts.grounded = true;
+      if (data.references?.length) msgOpts.references = data.references;
+      if (data.usage) msgOpts.usage = data.usage;
+
+      const assistMeta = {};
+      if (sources.length) assistMeta.sources = sources;
+      if (Object.keys(msgOpts).length) assistMeta.opts = msgOpts;
+      await _saveMessageToDB(sentSessionId, 'assistant', data.answer, assistMeta);
+
+      _inflightSessionId = null;
+
+      if (currentSessionId !== sentSessionId) return;
+
+      if (_chatRenderGen !== renderGenAtStart) {
+        if (getRoute().page === 'chat') onChatPageShow();
+        return;
+      }
+
+      if (getRoute().page !== 'chat') return;
+
+      removeLoading();
+      appendMsg(chatBox, 'assistant', data.answer, sources, msgOpts);
+      renderChatSidebar(sources, message);
+      showChatRightSidebar();
+      if (sources.length) loadAgents();
+      ensurePolling();
+    } else {
+      _inflightSessionId = null;
+      if (currentSessionId !== sentSessionId) return;
+      if (getRoute().page !== 'chat') return;
+      removeLoading();
     }
-
-    const session = chatSessions.find(s => s.id === sentSessionId);
-    const history = (session?.messages || [])
-      .filter(m => m.role === 'user' || m.role === 'assistant')
-      .map(m => ({ role: m.role, content: m.content }));
-    if (history.length) body.history = history;
-
-    const data = await api('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-    const sources = (data.sources || []).map(s => ({ id: s.agent_id, name: s.agent_name }));
-    const msgOpts = {};
-    if (data.web_sources?.length) msgOpts.webSources = data.web_sources;
-    if (data.grounded) msgOpts.grounded = true;
-    if (data.references?.length) msgOpts.references = data.references;
-    if (data.usage) msgOpts.usage = data.usage;
-
-    const assistMeta = {};
-    if (sources.length) assistMeta.sources = sources;
-    if (Object.keys(msgOpts).length) assistMeta.opts = msgOpts;
-    await _saveMessageToDB(sentSessionId, 'assistant', data.answer, assistMeta);
-
-    _inflightSessionId = null;
-
-    if (currentSessionId !== sentSessionId) return;
-
-    // If user navigated away and back, onChatPageShow already re-rendered
-    // from memory but only had the user message. Now the assistant message
-    // is in memory too — trigger a fresh re-render to show it.
-    if (_chatRenderGen !== renderGenAtStart) {
-      if (getRoute().page === 'chat') onChatPageShow();
-      return;
-    }
-
-    if (getRoute().page !== 'chat') return;
-
-    removeLoading();
-    appendMsg(chatBox, 'assistant', data.answer, sources, msgOpts);
-    renderChatSidebar(sources, message);
-    showChatRightSidebar();
-    if (sources.length) loadAgents();
-    ensurePolling();
 
     _inviteMindsToChat(chatBox, message, bookContext, agentIds, mentionedNames);
   } catch (err) {
@@ -2458,6 +2472,7 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
         onChatPageShow();
       }
       loadMinds();
+      _updateComposerMentionHint();
     }
   } catch (err) {
     removeMindsLoading();
@@ -2488,6 +2503,7 @@ function handleChatSend() {
 async function onChatPageShow() {
   renderSelectedChips();
   renderChatHistory();
+  _updateComposerMentionHint();
 
   if (pendingHomeMessage) {
     const msg = pendingHomeMessage;
@@ -2809,6 +2825,7 @@ async function renderBookDetail(bookId) {
   if (agent) {
     try { const msgs = await api('/api/agents/' + bookId + '/messages'); msgs.forEach(m => appendMsg(chatBox, m.role, m.content)); } catch {}
   }
+  _updateComposerMentionHint();
 }
 
 async function sendBookChat(bookId, message) {
@@ -2819,20 +2836,25 @@ async function sendBookChat(bookId, message) {
   if (input) input.value = '';
   showLoading(chatBox);
   const cleanMessage = mentionedNames.length ? stripMentions(message) : message;
+  const mentionOnly = mentionedNames.length > 0 && activeMinds.size > 0;
   try {
-    const data = await api('/api/agents/' + bookId + '/chat', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: cleanMessage }),
-    });
-    removeLoading();
-    const msgOpts = {};
-    if (data.skill_used) msgOpts.skillUsed = data.skill_used;
-    if (data.web_sources?.length) msgOpts.webSources = data.web_sources;
-    if (data.grounded) msgOpts.grounded = true;
-    if (data.references?.length) msgOpts.references = data.references;
-    if (data.usage) msgOpts.usage = data.usage;
-    appendMsg(chatBox, 'assistant', data.answer, null, msgOpts);
-    ensurePolling();
+    if (!mentionOnly) {
+      const data = await api('/api/agents/' + bookId + '/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: cleanMessage }),
+      });
+      removeLoading();
+      const msgOpts = {};
+      if (data.skill_used) msgOpts.skillUsed = data.skill_used;
+      if (data.web_sources?.length) msgOpts.webSources = data.web_sources;
+      if (data.grounded) msgOpts.grounded = true;
+      if (data.references?.length) msgOpts.references = data.references;
+      if (data.usage) msgOpts.usage = data.usage;
+      appendMsg(chatBox, 'assistant', data.answer, null, msgOpts);
+      ensurePolling();
+    } else {
+      removeLoading();
+    }
 
     if (activeMinds.size && mentionedNames.length) {
       const book = allBooks.find(b => b.agentId === bookId);
@@ -3045,10 +3067,24 @@ function renderSelectedChips() {
   });
   const homeInput = document.getElementById('home-input');
   if (homeInput) {
-    homeInput.placeholder = (selectedBooks.size || selectedMinds.size) ? 'Ask your question...' : 'Ask about books or topics — great minds will join in...';
+    const hasContext = selectedBooks.size || selectedMinds.size;
+    homeInput.placeholder = hasContext
+      ? (selectedMinds.size ? 'Ask your question... Type @ to mention a mind' : 'Ask your question...')
+      : 'Ask about books or topics — great minds will join in...';
   }
   // Re-render starters to match selected books
   if (getRoute().page === 'home') renderStarters();
+}
+
+function _updateComposerMentionHint() {
+  const hasMinds = activeMinds.size > 0 || selectedMinds.size > 0;
+  const hint = hasMinds ? 'Type @ to mention a mind' : '';
+  ['chat-input', 'book-chat-input'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const base = id === 'chat-input' ? 'Ask a follow-up question...' : 'Ask about this book...';
+    el.placeholder = hasMinds ? `${base} ${hint}` : base;
+  });
 }
 
 // Select a book and navigate to chat
