@@ -3472,7 +3472,7 @@ function _matchStrength(tokensA, tokensB) {
 
 function _buildGraphData(minds) {
   const now = Date.now();
-  const NEW_THRESHOLD_MS = 5 * 60 * 1000;
+  const NEW_THRESHOLD_MS = 24 * 60 * 60 * 1000;
   const nodes = minds.map(m => {
     const node = {
       id: m.id, name: m.name, era: m.era || '',
