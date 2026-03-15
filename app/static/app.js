@@ -85,7 +85,9 @@ async function initSupabase() {
         authToken = null;
         userTier = 'free';
       }
-      if (event === 'SIGNED_IN') await loadUserTier();
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
+        await loadUserTier();
+      }
       updateAuthUI();
       if (event === 'SIGNED_IN' && (window.location.hash === '' || window.location.hash === '#' || window.location.hash === '#/' || window.location.hash === '#/login' || window.location.hash === '#/landing')) {
         window.location.hash = '#/';

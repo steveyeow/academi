@@ -129,6 +129,10 @@ def _conflict_ignore(query: str) -> str:
 def init_db() -> None:
     with get_conn() as conn:
         if _USE_PG:
+            # ── Create tables (schema matches the latest version) ──
+            # NOTE: CREATE TABLE IF NOT EXISTS won't alter existing tables,
+            # so columns added later (user_id, is_deleted) may be missing
+            # in old deployments.  Migrations below handle that.
             _execute(conn, """
                 CREATE TABLE IF NOT EXISTS agents (
                     id TEXT PRIMARY KEY,
@@ -164,7 +168,6 @@ def init_db() -> None:
                     created_at TEXT NOT NULL
                 )
             """)
-            _execute(conn, "CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(agent_id, user_id)")
             _execute(conn, """
                 CREATE TABLE IF NOT EXISTS questions (
                     id TEXT PRIMARY KEY,
@@ -218,7 +221,6 @@ def init_db() -> None:
                 )
             """)
             _execute(conn, "CREATE INDEX IF NOT EXISTS idx_mind_memories_mind ON mind_memories(mind_id)")
-            _execute(conn, "CREATE INDEX IF NOT EXISTS idx_mind_memories_user ON mind_memories(mind_id, user_id)")
 
             # Chat sessions
             _execute(conn, """
@@ -233,7 +235,6 @@ def init_db() -> None:
                     created_at TEXT NOT NULL
                 )
             """)
-            _execute(conn, "CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id)")
             _execute(conn, """
                 CREATE TABLE IF NOT EXISTS session_messages (
                     id TEXT PRIMARY KEY,
@@ -246,7 +247,43 @@ def init_db() -> None:
             """)
             _execute(conn, "CREATE INDEX IF NOT EXISTS idx_session_messages_session ON session_messages(session_id)")
 
-            # Migration: add user_id column if missing (existing deployments)
+            # ── Migrations: add columns that may be missing in old deployments ──
+            # Run these BEFORE creating indexes on those columns.
+
+            # Migration: add user_id to agents table
+            try:
+                _execute(conn, "SAVEPOINT sp_agents_uid")
+                _execute(conn, "ALTER TABLE agents ADD COLUMN user_id TEXT")
+                _execute(conn, "RELEASE SAVEPOINT sp_agents_uid")
+            except Exception:
+                _execute(conn, "ROLLBACK TO SAVEPOINT sp_agents_uid")
+
+            # Migration: add is_deleted to agents table
+            try:
+                _execute(conn, "SAVEPOINT sp_agents_del")
+                _execute(conn, "ALTER TABLE agents ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE")
+                _execute(conn, "RELEASE SAVEPOINT sp_agents_del")
+            except Exception:
+                _execute(conn, "ROLLBACK TO SAVEPOINT sp_agents_del")
+
+            # Migration: add user_id to messages table
+            try:
+                _execute(conn, "SAVEPOINT sp_messages_uid")
+                _execute(conn, "ALTER TABLE messages ADD COLUMN user_id TEXT")
+                _execute(conn, "DELETE FROM messages WHERE user_id IS NULL")
+                _execute(conn, "RELEASE SAVEPOINT sp_messages_uid")
+            except Exception:
+                _execute(conn, "ROLLBACK TO SAVEPOINT sp_messages_uid")
+
+            # Migration: add user_id to mind_memories table
+            try:
+                _execute(conn, "SAVEPOINT sp_mind_memories_uid")
+                _execute(conn, "ALTER TABLE mind_memories ADD COLUMN user_id TEXT")
+                _execute(conn, "RELEASE SAVEPOINT sp_mind_memories_uid")
+            except Exception:
+                _execute(conn, "ROLLBACK TO SAVEPOINT sp_mind_memories_uid")
+
+            # Migration: add user_id to chat_sessions
             try:
                 _execute(conn, "SAVEPOINT sp_chat_sessions_uid")
                 _execute(conn, "ALTER TABLE chat_sessions ADD COLUMN user_id TEXT")
@@ -259,32 +296,12 @@ def init_db() -> None:
                 _execute(conn, "RELEASE SAVEPOINT sp_chat_sessions_uid")
             except Exception:
                 _execute(conn, "ROLLBACK TO SAVEPOINT sp_chat_sessions_uid")
-            _execute(conn, "CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id)")
 
-            # Migration: add user_id to messages table
-            try:
-                _execute(conn, "SAVEPOINT sp_messages_uid")
-                _execute(conn, "ALTER TABLE messages ADD COLUMN user_id TEXT")
-                _execute(conn, "DELETE FROM messages WHERE user_id IS NULL")
-                _execute(conn, "RELEASE SAVEPOINT sp_messages_uid")
-            except Exception:
-                _execute(conn, "ROLLBACK TO SAVEPOINT sp_messages_uid")
-            _execute(conn, "CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(agent_id, user_id)")
-
-            # Migration: add user_id and is_deleted to agents table
-            try:
-                _execute(conn, "SAVEPOINT sp_agents_uid")
-                _execute(conn, "ALTER TABLE agents ADD COLUMN user_id TEXT")
-                _execute(conn, "RELEASE SAVEPOINT sp_agents_uid")
-            except Exception:
-                _execute(conn, "ROLLBACK TO SAVEPOINT sp_agents_uid")
+            # ── Now safe to create indexes on migrated columns ──
             _execute(conn, "CREATE INDEX IF NOT EXISTS idx_agents_user ON agents(user_id)")
-            try:
-                _execute(conn, "SAVEPOINT sp_agents_del")
-                _execute(conn, "ALTER TABLE agents ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE")
-                _execute(conn, "RELEASE SAVEPOINT sp_agents_del")
-            except Exception:
-                _execute(conn, "ROLLBACK TO SAVEPOINT sp_agents_del")
+            _execute(conn, "CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(agent_id, user_id)")
+            _execute(conn, "CREATE INDEX IF NOT EXISTS idx_mind_memories_user ON mind_memories(mind_id, user_id)")
+            _execute(conn, "CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id)")
 
             # Pro tables
             _execute(conn, """
