@@ -420,6 +420,16 @@ def index() -> HTMLResponse:
     return HTMLResponse(html)
 
 
+@app.get("/terms", response_class=HTMLResponse)
+def terms_page() -> HTMLResponse:
+    return HTMLResponse((static_dir / "terms.html").read_text(encoding="utf-8"))
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy_page() -> HTMLResponse:
+    return HTMLResponse((static_dir / "privacy.html").read_text(encoding="utf-8"))
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     return {"status": "ok", "app": config.APP_NAME}
@@ -1152,6 +1162,7 @@ class PanelChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     mind_ids: list[str] = Field(..., min_items=1)
     target_minds: list[str] | None = None
+    invited_mind_ids: list[str] | None = None
     agent_ids: list[str] | None = None
     book_context: list[BookContext] | None = None
     history: list[HistoryMessage] | None = None
@@ -1312,9 +1323,16 @@ def api_panel_chat(payload: PanelChatRequest, request: Request, background_tasks
     # Filter to targeted minds if @mentions are used
     if payload.target_minds:
         targets = {n.lower() for n in payload.target_minds}
-        minds = [m for m in minds if m["name"].lower() in targets]
-        if not minds:
+        targeted = [m for m in minds if m["name"].lower() in targets]
+        if not targeted:
             raise HTTPException(status_code=400, detail="No matching target minds")
+        minds = targeted
+        # Ensure @mentioned minds get the user_invited prompt
+        if not payload.invited_mind_ids:
+            payload.invited_mind_ids = []
+        for m in minds:
+            if m["id"] not in payload.invited_mind_ids:
+                payload.invited_mind_ids.append(m["id"])
 
     book_ctx = ""
     agent_ids = payload.agent_ids or []
@@ -1336,6 +1354,8 @@ def api_panel_chat(payload: PanelChatRequest, request: Request, background_tasks
             book_context=book_ctx,
             agent_ids=agent_ids if agent_ids else None,
             history=history,
+            invited_mind_ids=payload.invited_mind_ids,
+            is_mention=bool(payload.target_minds),
         )
     except ProviderError as exc:
         raise HTTPException(status_code=503, detail=str(exc))

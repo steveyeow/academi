@@ -379,6 +379,27 @@ def init_db() -> None:
             """)
             _execute(conn, "CREATE INDEX IF NOT EXISTS idx_session_messages_session ON session_messages(session_id)")
 
+            # Pro tables (SQLite)
+            _execute(conn, """
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT NOT NULL,
+                    tier TEXT DEFAULT 'free',
+                    stripe_customer_id TEXT,
+                    stripe_subscription_id TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+            """)
+            _execute(conn, """
+                CREATE TABLE IF NOT EXISTS usage (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT REFERENCES users(id),
+                    action TEXT NOT NULL,
+                    tokens_used INTEGER DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+            """)
+
 
 def create_agent(name: str, agent_type: str, source: str | None, meta: dict[str, Any]) -> str:
     agent_id = str(uuid.uuid4())
@@ -820,49 +841,48 @@ def list_session_messages(session_id: str) -> list[dict[str, Any]]:
 def get_or_create_user(user_id: str, email: str) -> dict[str, Any]:
     """Get existing user or create a new free-tier user."""
     with get_conn() as conn:
-        row = _fetchone(conn, "SELECT * FROM users WHERE id = %s", (user_id,))
+        row = _fetchone(conn, _q("SELECT * FROM users WHERE id = ?"), (user_id,))
         if row:
             return row
-        _execute(conn, """
-            INSERT INTO users (id, email, tier) VALUES (%s, %s, 'free')
-            ON CONFLICT (id) DO NOTHING
-        """, (user_id, email))
-        row = _fetchone(conn, "SELECT * FROM users WHERE id = %s", (user_id,))
+        _execute(conn, _conflict_ignore(_q(
+            "INSERT OR IGNORE INTO users (id, email, tier) VALUES (?, ?, 'free')"
+        )), (user_id, email))
+        row = _fetchone(conn, _q("SELECT * FROM users WHERE id = ?"), (user_id,))
         return row
 
 
 def get_user(user_id: str) -> dict[str, Any] | None:
     with get_conn() as conn:
-        return _fetchone(conn, "SELECT * FROM users WHERE id = %s", (user_id,))
+        return _fetchone(conn, _q("SELECT * FROM users WHERE id = ?"), (user_id,))
 
 
 def update_user_tier(user_id: str, tier: str, stripe_customer_id: str | None = None,
                      stripe_subscription_id: str | None = None) -> None:
     with get_conn() as conn:
-        _execute(conn, """
-            UPDATE users SET tier = %s, stripe_customer_id = COALESCE(%s, stripe_customer_id),
-            stripe_subscription_id = COALESCE(%s, stripe_subscription_id)
-            WHERE id = %s
-        """, (tier, stripe_customer_id, stripe_subscription_id, user_id))
+        _execute(conn, _q("""
+            UPDATE users SET tier = ?, stripe_customer_id = COALESCE(?, stripe_customer_id),
+            stripe_subscription_id = COALESCE(?, stripe_subscription_id)
+            WHERE id = ?
+        """), (tier, stripe_customer_id, stripe_subscription_id, user_id))
 
 
 def find_user_by_stripe_customer(customer_id: str) -> dict[str, Any] | None:
     with get_conn() as conn:
-        return _fetchone(conn, "SELECT * FROM users WHERE stripe_customer_id = %s", (customer_id,))
+        return _fetchone(conn, _q("SELECT * FROM users WHERE stripe_customer_id = ?"), (customer_id,))
 
 
 def record_usage(user_id: str, action: str, tokens_used: int = 0) -> None:
     with get_conn() as conn:
-        _execute(conn, """
-            INSERT INTO usage (user_id, action, tokens_used) VALUES (%s, %s, %s)
-        """, (user_id, action, tokens_used))
+        _execute(conn, _q("""
+            INSERT INTO usage (user_id, action, tokens_used) VALUES (?, ?, ?)
+        """), (user_id, action, tokens_used))
 
 
 def count_usage_today(user_id: str, action: str) -> int:
     with get_conn() as conn:
-        row = _fetchone(conn, """
+        row = _fetchone(conn, _q("""
             SELECT COUNT(*) as cnt FROM usage
-            WHERE user_id = %s AND action = %s
+            WHERE user_id = ? AND action = ?
             AND created_at >= CURRENT_DATE
-        """, (user_id, action))
+        """), (user_id, action))
         return row["cnt"] if row else 0

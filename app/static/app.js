@@ -189,14 +189,22 @@ function renderLoginPage() {
     <div class="login-container">
       <div class="login-card">
         <div class="login-brand">
-          <svg width="40" height="40" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-            <rect x="24" y="0" width="8" height="4" fill="#FDCB6E"/><rect x="26" y="4" width="4" height="4" fill="#B8B8B8"/>
-            <rect x="8" y="8" width="40" height="28" fill="#DA7756"/><rect x="12" y="12" width="32" height="20" fill="#FFF1E0"/>
-            <rect x="16" y="16" width="8" height="8" fill="#2D3436"/><rect x="32" y="16" width="8" height="8" fill="#2D3436"/>
-            <rect x="18" y="18" width="4" height="4" fill="#fff"/><rect x="34" y="18" width="4" height="4" fill="#fff"/>
-            <rect x="22" y="28" width="12" height="2" fill="#C45E3E"/><rect x="18" y="38" width="4" height="8" fill="#B8B8B8"/>
-            <rect x="34" y="38" width="4" height="8" fill="#B8B8B8"/>
-          </svg>
+          <div class="greeting-logo-wrap" style="width:40px;height:40px">
+            <svg class="greeting-logo" width="40" height="40" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+              <rect x="24" y="0" width="8" height="4" fill="#FDCB6E"/><rect x="26" y="4" width="4" height="4" fill="#B8B8B8"/>
+              <rect x="8" y="8" width="40" height="28" fill="#DA7756"/><rect x="12" y="12" width="32" height="20" fill="#FFF1E0"/>
+              <rect x="16" y="16" width="8" height="8" fill="#2D3436"/><rect x="32" y="16" width="8" height="8" fill="#2D3436"/>
+              <rect x="18" y="18" width="4" height="4" fill="#fff"/><rect x="34" y="18" width="4" height="4" fill="#fff"/>
+              <rect x="22" y="28" width="12" height="2" fill="#C45E3E"/><rect x="18" y="38" width="4" height="8" fill="#B8B8B8"/>
+              <rect x="34" y="38" width="4" height="8" fill="#B8B8B8"/>
+            </svg>
+            <svg class="greeting-feynman-logo" width="40" height="40" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <line x1="8" y1="58" x2="32" y2="30" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+              <line x1="56" y1="58" x2="32" y2="30" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="32" cy="30" r="3.5" fill="currentColor"/>
+              <path d="M32,30 C26,24 38,18 32,12 C26,6 38,0 32,-4" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
         </div>
         <h1 class="login-welcome">Welcome to <span class="login-welcome-brand">Feynman</span></h1>
         <p class="login-subtitle">Chat with books. Learn with great minds.</p>
@@ -204,6 +212,7 @@ function renderLoginPage() {
           <svg width="20" height="20" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18A10.96 10.96 0 0 0 1 12c0 1.77.42 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
           Continue with Google
         </button>
+        <p class="login-oauth-terms">By continuing, you agree to our <a href="/terms" target="_blank">Terms</a> and <a href="/privacy" target="_blank">Privacy&nbsp;Policy</a>.</p>
         <div id="auth-error" class="auth-error"></div>
         <div id="auth-success" class="auth-success"></div>
         <div class="login-divider"><span>or sign in with email</span></div>
@@ -215,6 +224,10 @@ function renderLoginPage() {
             <div class="login-field">
               <input id="auth-password" class="login-input" type="password" placeholder="Password" required autocomplete="current-password" minlength="6" />
             </div>
+            <label id="terms-agree" class="login-terms" style="display:none">
+              <input type="checkbox" id="terms-checkbox" />
+              I agree to the <a href="/terms" target="_blank">Terms of Service</a> and <a href="/privacy" target="_blank">Privacy Policy</a>
+            </label>
             <button id="auth-submit-btn" class="login-submit login-submit-secondary" type="submit">Sign in</button>
           </form>
           <p class="login-toggle"><span id="auth-toggle-label">Don't have an account?</span> <a href="javascript:void(0)" id="auth-toggle-link">Sign up</a></p>
@@ -228,12 +241,16 @@ function renderLoginPage() {
   const emailSection = el.querySelector('#email-section');
   const errorEl = el.querySelector('#auth-error'), successEl = el.querySelector('#auth-success');
   const divider = el.querySelector('.login-divider');
+  const termsWrap = el.querySelector('#terms-agree');
+  const termsCheckbox = el.querySelector('#terms-checkbox');
 
   function updateMode() {
     submitBtn.textContent = isSignUp ? 'Create account' : 'Sign in';
     toggleLabel.textContent = isSignUp ? 'Already have an account?' : "Don't have an account?";
     toggleLink.textContent = isSignUp ? 'Sign in' : 'Sign up';
     passwordInput.autocomplete = isSignUp ? 'new-password' : 'current-password';
+    termsWrap.style.display = isSignUp ? '' : 'none';
+    if (!isSignUp) termsCheckbox.checked = false;
     errorEl.textContent = ''; successEl.textContent = '';
   }
 
@@ -271,6 +288,10 @@ function renderLoginPage() {
     if (!email || !password) return;
     if (!supabaseClient) {
       errorEl.textContent = 'Authentication is not configured. Please set up Supabase credentials.';
+      return;
+    }
+    if (isSignUp && !termsCheckbox.checked) {
+      errorEl.textContent = 'Please agree to the Terms of Service and Privacy Policy.';
       return;
     }
     errorEl.textContent = ''; successEl.textContent = '';
@@ -1798,7 +1819,7 @@ function showOnboarding() {
 }
 
 // ─── Chat messages ───
-function appendMsg(container, role, text, sources, opts) {
+function appendMsg(container, role, text, sources, opts, hasMentions) {
   const el = document.createElement('div');
   el.className = 'chat-message ' + role;
   el.dataset.raw = text;
@@ -1836,6 +1857,8 @@ function appendMsg(container, role, text, sources, opts) {
         if (refEl) refEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
     });
+  } else if (role === 'user' && hasMentions) {
+    el.innerHTML = renderUserMsgWithMentions(text);
   } else {
     el.textContent = text;
   }
@@ -2047,9 +2070,9 @@ async function switchToSession(id) {
     selectedMinds = new Map(session.minds || []);
     activeMinds = new Map(session.activeMinds || []);
     const chatBox = document.getElementById('chat-messages');
+    _chatRenderGen++;
     chatBox.innerHTML = '';
 
-    // Load messages from DB
     try {
       const msgs = await api(`/api/sessions/${id}/messages`);
       session.messages = msgs.map(m => ({ role: m.role, content: m.content, ...m.meta }));
@@ -2182,11 +2205,13 @@ async function sendGlobalChat(message) {
     return;
   }
 
+  const mentionedNames = parseMentions(message);
+
   if (!currentSessionId) await createSession();
   updateSessionTitle(message);
   const sentSessionId = currentSessionId;
 
-  appendMsg(chatBox, 'user', message);
+  appendMsg(chatBox, 'user', message, null, null, mentionedNames.length > 0);
   showLoading(chatBox);
 
   await _saveMessageToDB(sentSessionId, 'user', message);
@@ -2195,7 +2220,8 @@ async function sendGlobalChat(message) {
   const renderGenAtStart = _chatRenderGen;
 
   try {
-    const body = { message };
+    const cleanMessage = mentionedNames.length ? stripMentions(message) : message;
+    const body = { message: cleanMessage };
     const agentIds = [];
     const bookContext = [];
     for (const [, book] of selectedBooks) {
@@ -2233,11 +2259,17 @@ async function sendGlobalChat(message) {
 
     _inflightSessionId = null;
 
-    // If user left & returned (re-render happened), onChatPageShow already
-    // rendered messages from memory (which now includes the assistant reply).
-    if (_chatRenderGen !== renderGenAtStart) return;
+    if (currentSessionId !== sentSessionId) return;
 
-    if (currentSessionId !== sentSessionId || getRoute().page !== 'chat') return;
+    // If user navigated away and back, onChatPageShow already re-rendered
+    // from memory but only had the user message. Now the assistant message
+    // is in memory too — trigger a fresh re-render to show it.
+    if (_chatRenderGen !== renderGenAtStart) {
+      if (getRoute().page === 'chat') onChatPageShow();
+      return;
+    }
+
+    if (getRoute().page !== 'chat') return;
 
     removeLoading();
     appendMsg(chatBox, 'assistant', data.answer, sources, msgOpts);
@@ -2246,11 +2278,14 @@ async function sendGlobalChat(message) {
     if (sources.length) loadAgents();
     ensurePolling();
 
-    _inviteMindsToChat(chatBox, message, bookContext, agentIds);
+    _inviteMindsToChat(chatBox, message, bookContext, agentIds, mentionedNames);
   } catch (err) {
     _inflightSessionId = null;
     if (currentSessionId !== sentSessionId) return;
-    if (_chatRenderGen !== renderGenAtStart) return;
+    if (_chatRenderGen !== renderGenAtStart) {
+      if (getRoute().page === 'chat') onChatPageShow();
+      return;
+    }
     removeLoading();
     const msg = err.message.includes('No available provider')
       ? 'No LLM API key configured. Please add GEMINI_API_KEY, OPENAI_API_KEY, or KIMI_API_KEY to your .env file and restart the server.'
@@ -2279,17 +2314,22 @@ async function _saveMessageToDB(sessionId, role, content, meta) {
 
 let _mindsInvitedOnce = false;
 
-async function _inviteMindsToChat(chatBox, message, bookContext, agentIds) {
+async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targetMindNames) {
+  const sessionId = currentSessionId;
+  const renderGenAtStart = _chatRenderGen;
+
   try {
     const mindIds = [...activeMinds.keys()];
     for (const [id] of selectedMinds) {
       if (!mindIds.includes(id)) mindIds.push(id);
     }
 
-    const skipSuggest = !isProUser() && _mindsInvitedOnce;
+    const hasMentions = targetMindNames && targetMindNames.length > 0;
+    const skipSuggest = hasMentions || (!isProUser() && _mindsInvitedOnce);
 
     const allKnownNames = [...activeMinds.values(), ...selectedMinds.values()].map(m => m.name);
-    const suggestBody = { count: 3, exclude: allKnownNames };
+    const suggestCount = Math.floor(Math.random() * 3) + 1;
+    const suggestBody = { count: suggestCount, exclude: allKnownNames };
     if (bookContext && bookContext.length) {
       suggestBody.book_title = bookContext[0].title;
       suggestBody.book_author = bookContext[0].author || '';
@@ -2300,10 +2340,12 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds) {
     showMindsLoading(chatBox);
 
     const newJoinedNames = [];
+    const invitedMindIds = [];
     for (const [id, m] of selectedMinds) {
       if (!activeMinds.has(id)) {
         activeMinds.set(id, m);
         newJoinedNames.push(m.name);
+        invitedMindIds.push(id);
       }
     }
 
@@ -2338,11 +2380,6 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds) {
 
     if (!mindIds.length) return;
 
-    for (const name of newJoinedNames) {
-      appendJoinNotice(chatBox, [name]);
-      if (currentSessionId) _saveMessageToDB(currentSessionId, 'system-notice', '', { mindNames: [name] });
-    }
-
     const history = [];
     chatBox.querySelectorAll('.chat-message:not(#loading-msg):not(.minds-loading-notice)').forEach(el => {
       if (el.classList.contains('mind-message')) {
@@ -2353,9 +2390,12 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds) {
       }
     });
 
-    const panelBody = { message, mind_ids: mindIds, history };
+    const cleanMessage = hasMentions ? stripMentions(message) : message;
+    const panelBody = { message: cleanMessage, mind_ids: mindIds, history };
     if (bookContext?.length) panelBody.book_context = bookContext;
     if (agentIds?.length) panelBody.agent_ids = agentIds;
+    if (invitedMindIds.length) panelBody.invited_mind_ids = invitedMindIds;
+    if (hasMentions) panelBody.target_minds = targetMindNames;
 
     const panelData = await api('/api/minds/panel-chat', {
       method: 'POST',
@@ -2364,11 +2404,50 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds) {
     });
 
     if (panelData.responses?.length) {
+      const respondedNames = new Set();
       for (const r of panelData.responses) {
         if (r.response && !r.response.startsWith('[')) {
-          appendMindMsg(chatBox, r.mind_name, r.response);
-          if (currentSessionId) _saveMessageToDB(currentSessionId, 'mind', r.response, { mindName: r.mind_name });
+          respondedNames.add(r.mind_name);
         }
+      }
+      // Remove newly added minds that failed to respond
+      for (const [id, m] of activeMinds) {
+        if (newJoinedNames.includes(m.name) && !respondedNames.has(m.name)) {
+          activeMinds.delete(id);
+        }
+      }
+
+      // Always save to DB first (even if user navigated away)
+      for (const name of newJoinedNames) {
+        if (respondedNames.has(name)) {
+          if (sessionId) _saveMessageToDB(sessionId, 'system-notice', '', { mindNames: [name] });
+        }
+      }
+      for (const r of panelData.responses) {
+        if (r.response && !r.response.startsWith('[')) {
+          if (sessionId) _saveMessageToDB(sessionId, 'mind', r.response, { mindName: r.mind_name });
+        }
+      }
+
+      // Check if user is still viewing the same chat
+      const stillOnSamePage = currentSessionId === sessionId
+        && _chatRenderGen === renderGenAtStart
+        && getRoute().page === 'chat';
+
+      if (stillOnSamePage) {
+        for (const name of newJoinedNames) {
+          if (respondedNames.has(name)) {
+            appendJoinNotice(chatBox, [name]);
+          }
+        }
+        for (const r of panelData.responses) {
+          if (r.response && !r.response.startsWith('[')) {
+            appendMindMsg(chatBox, r.mind_name, r.response);
+          }
+        }
+      } else if (currentSessionId === sessionId && getRoute().page === 'chat') {
+        // User left and came back to the same session — re-render to show new messages
+        onChatPageShow();
       }
       loadMinds();
     }
@@ -2423,6 +2502,7 @@ async function onChatPageShow() {
     }
   }
 
+  _chatRenderGen++;
   chatBox.innerHTML = '';
   if (session?.messages?.length) {
     for (const m of session.messages) {
@@ -2726,13 +2806,15 @@ async function renderBookDetail(bookId) {
 async function sendBookChat(bookId, message) {
   const chatBox = document.getElementById('book-chat-messages');
   const input = document.getElementById('book-chat-input');
-  appendMsg(chatBox, 'user', message);
+  const mentionedNames = parseMentions(message);
+  appendMsg(chatBox, 'user', message, null, null, mentionedNames.length > 0);
   if (input) input.value = '';
   showLoading(chatBox);
+  const cleanMessage = mentionedNames.length ? stripMentions(message) : message;
   try {
     const data = await api('/api/agents/' + bookId + '/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message: cleanMessage }),
     });
     removeLoading();
     const msgOpts = {};
@@ -2742,8 +2824,13 @@ async function sendBookChat(bookId, message) {
     if (data.references?.length) msgOpts.references = data.references;
     if (data.usage) msgOpts.usage = data.usage;
     appendMsg(chatBox, 'assistant', data.answer, null, msgOpts);
-    // Start polling if the agent started learning
     ensurePolling();
+
+    if (activeMinds.size && mentionedNames.length) {
+      const book = allBooks.find(b => b.agentId === bookId);
+      const bookContext = book ? [{ title: book.title, author: book.author || '' }] : [];
+      _inviteMindsToChat(chatBox, message, bookContext, [bookId], mentionedNames);
+    }
   } catch (err) {
     removeLoading();
     appendMsg(chatBox, 'assistant', 'Error: ' + err.message);
@@ -2981,8 +3068,204 @@ function autoResize(textarea) {
 
 function bindEnterSend(textarea, handler) {
   textarea.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handler(); }
+    if (e.key === 'Enter' && !e.shiftKey && !textarea._mentionDropdownOpen) {
+      e.preventDefault(); handler();
+    }
   });
+}
+
+// ─── @mention autocomplete ───
+
+function _getMentionableMinds() {
+  const minds = [];
+  const seen = new Set();
+  for (const [id, m] of activeMinds) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      const full = allMinds.find(x => x.id === id);
+      minds.push({ id, name: m.name, domain: full?.domain || '', era: full?.era || '' });
+    }
+  }
+  for (const [id, m] of selectedMinds) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      minds.push({ id, name: m.name, domain: m.domain || '', era: m.era || '' });
+    }
+  }
+  return minds;
+}
+
+function bindMentionAutocomplete(textarea) {
+  let dropdown = null;
+  let items = [];
+  let activeIdx = 0;
+  let mentionStart = -1;
+
+  function getQuery() {
+    const val = textarea.value;
+    const cur = textarea.selectionStart;
+    const before = val.slice(0, cur);
+    const atIdx = before.lastIndexOf('@');
+    if (atIdx < 0) return null;
+    if (atIdx > 0 && /\S/.test(before[atIdx - 1])) return null;
+    const query = before.slice(atIdx + 1);
+    if (/\n/.test(query)) return null;
+    return { query, atIdx };
+  }
+
+  function createDropdown() {
+    if (dropdown) return;
+    dropdown = document.createElement('div');
+    dropdown.className = 'mention-dropdown';
+    const wrapper = textarea.closest('.chat-composer-inline') || textarea.parentElement;
+    wrapper.style.position = 'relative';
+    wrapper.appendChild(dropdown);
+  }
+
+  function destroyDropdown() {
+    if (dropdown) { dropdown.remove(); dropdown = null; }
+    items = [];
+    activeIdx = 0;
+    mentionStart = -1;
+    textarea._mentionDropdownOpen = false;
+  }
+
+  function renderDropdown(minds, query) {
+    if (!minds.length) { destroyDropdown(); return; }
+    createDropdown();
+    items = minds;
+    activeIdx = 0;
+    textarea._mentionDropdownOpen = true;
+    dropdown.innerHTML = minds.map((m, i) => {
+      const color = mindColor(m.name);
+      const initials = mindInitials(m.name);
+      const nameHtml = highlightMatch(m.name, query);
+      const sub = [m.era, m.domain].filter(Boolean).join(' · ');
+      return `<div class="mention-item${i === 0 ? ' active' : ''}" data-idx="${i}">
+        <div class="mention-item-avatar" style="background:${color}">${initials}</div>
+        <div class="mention-item-info">
+          <span class="mention-item-name">${nameHtml}</span>
+          ${sub ? `<span class="mention-item-domain">${esc(sub)}</span>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    dropdown.querySelectorAll('.mention-item').forEach(el => {
+      el.addEventListener('mousedown', e => {
+        e.preventDefault();
+        selectItem(parseInt(el.dataset.idx));
+      });
+      el.addEventListener('mouseenter', () => {
+        setActive(parseInt(el.dataset.idx));
+      });
+    });
+  }
+
+  function highlightMatch(name, query) {
+    if (!query) return esc(name);
+    const lower = name.toLowerCase();
+    const qLower = query.toLowerCase();
+    const idx = lower.indexOf(qLower);
+    if (idx < 0) return esc(name);
+    const before = name.slice(0, idx);
+    const match = name.slice(idx, idx + query.length);
+    const after = name.slice(idx + query.length);
+    return esc(before) + '<strong>' + esc(match) + '</strong>' + esc(after);
+  }
+
+  function setActive(idx) {
+    activeIdx = idx;
+    dropdown?.querySelectorAll('.mention-item').forEach((el, i) => {
+      el.classList.toggle('active', i === idx);
+    });
+  }
+
+  function selectItem(idx) {
+    const mind = items[idx];
+    if (!mind) return;
+    const val = textarea.value;
+    const cur = textarea.selectionStart;
+    const before = val.slice(0, cur);
+    const atIdx = before.lastIndexOf('@');
+    const newVal = val.slice(0, atIdx) + '@' + mind.name + ' ' + val.slice(cur);
+    textarea.value = newVal;
+    const newCur = atIdx + mind.name.length + 2;
+    textarea.setSelectionRange(newCur, newCur);
+    textarea.focus();
+    destroyDropdown();
+    textarea.dispatchEvent(new Event('input'));
+  }
+
+  textarea.addEventListener('input', () => {
+    const info = getQuery();
+    if (!info) { destroyDropdown(); return; }
+    mentionStart = info.atIdx;
+    const q = info.query.toLowerCase();
+    const minds = _getMentionableMinds().filter(m =>
+      m.name.toLowerCase().includes(q)
+    ).slice(0, 6);
+    renderDropdown(minds, info.query);
+  });
+
+  textarea.addEventListener('keydown', e => {
+    if (!dropdown) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActive((activeIdx + 1) % items.length);
+      const el = dropdown.querySelectorAll('.mention-item')[activeIdx];
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActive((activeIdx - 1 + items.length) % items.length);
+      const el = dropdown.querySelectorAll('.mention-item')[activeIdx];
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      selectItem(activeIdx);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      destroyDropdown();
+    }
+  });
+
+  textarea.addEventListener('blur', () => {
+    setTimeout(destroyDropdown, 150);
+  });
+}
+
+function parseMentions(text) {
+  const minds = _getMentionableMinds();
+  const mentioned = [];
+  const sorted = [...minds].sort((a, b) => b.name.length - a.name.length);
+  for (const m of sorted) {
+    const pattern = new RegExp('@' + m.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=\\s|$)', 'gi');
+    if (pattern.test(text)) {
+      mentioned.push(m.name);
+    }
+  }
+  return mentioned;
+}
+
+function stripMentions(text) {
+  const minds = _getMentionableMinds();
+  let result = text;
+  const sorted = [...minds].sort((a, b) => b.name.length - a.name.length);
+  for (const m of sorted) {
+    const pattern = new RegExp('@' + m.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=\\s|$)', 'gi');
+    result = result.replace(pattern, m.name);
+  }
+  return result.trim();
+}
+
+function renderUserMsgWithMentions(text) {
+  const minds = _getMentionableMinds();
+  let html = esc(text);
+  const sorted = [...minds].sort((a, b) => b.name.length - a.name.length);
+  for (const m of sorted) {
+    const escaped = esc(m.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp('@' + escaped + '(?=\\s|$|&)', 'g');
+    html = html.replace(pattern, `<span class="mention-tag">@${esc(m.name)}</span>`);
+  }
+  return html;
 }
 
 // ─── Utility ───
@@ -3800,11 +4083,13 @@ async function renderMindDetail(mindId) {
 async function sendMindChat(mindId, message) {
   const chatBox = document.getElementById('mind-chat-messages');
   const input = document.getElementById('mind-chat-input');
-  appendMsg(chatBox, 'user', message);
+  const mentionedNames = parseMentions(message);
+  appendMsg(chatBox, 'user', message, null, null, mentionedNames.length > 0);
   if (input) input.value = '';
   showLoading(chatBox);
 
-  const body = { message };
+  const cleanMessage = mentionedNames.length ? stripMentions(message) : message;
+  const body = { message: cleanMessage };
   if (mindChatHistory.length) body.history = mindChatHistory;
 
   const bookContext = [];
@@ -3836,7 +4121,7 @@ async function sendMindChat(mindId, message) {
     }
 
     _saveMindSession(chatBox);
-    _inviteMindsToChat(chatBox, message, bookContext, agentIds);
+    _inviteMindsToChat(chatBox, message, bookContext, agentIds, mentionedNames);
   } catch (err) {
     removeLoading();
     appendMsg(chatBox, 'assistant', 'Error: ' + err.message);
@@ -4014,8 +4299,6 @@ async function init() {
   renderChatHistory();
   updateAuthUI();
 
-  document.getElementById('app-layout').classList.add('sidebar-collapsed');
-
   // Sidebar toggle
   document.getElementById('sidebar-toggle-btn').addEventListener('click', toggleSidebar);
   document.getElementById('sidebar-float-btn').addEventListener('click', toggleSidebar);
@@ -4086,6 +4369,7 @@ async function init() {
   const homeInput = document.getElementById('home-input');
   autoResize(homeInput);
   bindEnterSend(homeInput, handleHomeSend);
+  bindMentionAutocomplete(homeInput);
   document.getElementById('home-send-btn').addEventListener('click', handleHomeSend);
 
   // Home + button → books popover
@@ -4105,6 +4389,7 @@ async function init() {
   const chatInput = document.getElementById('chat-input');
   autoResize(chatInput);
   bindEnterSend(chatInput, handleChatSend);
+  bindMentionAutocomplete(chatInput);
   document.getElementById('chat-send-btn').addEventListener('click', handleChatSend);
 
   // Chat + button → books popover
@@ -4130,6 +4415,7 @@ async function init() {
   // Book chat
   const bookInput = document.getElementById('book-chat-input');
   autoResize(bookInput);
+  bindMentionAutocomplete(bookInput);
   bindEnterSend(bookInput, () => {
     const msg = bookInput.value.trim();
     if (msg && currentBookId) { bookInput.value = ''; sendBookChat(currentBookId, msg); }
@@ -4199,6 +4485,7 @@ async function init() {
   // Mind chat
   const mindInput = document.getElementById('mind-chat-input');
   autoResize(mindInput);
+  bindMentionAutocomplete(mindInput);
   bindEnterSend(mindInput, () => {
     const msg = mindInput.value.trim();
     if (msg && currentMindId) { mindInput.value = ''; sendMindChat(currentMindId, msg); }

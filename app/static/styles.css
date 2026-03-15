@@ -538,6 +538,70 @@ body {
 .composer-send-btn:hover { opacity: 0.8; }
 .composer-send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
+/* ─── @mention autocomplete ─── */
+.mention-dropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  z-index: 200;
+  padding: 4px;
+  margin-bottom: 8px;
+  scrollbar-width: thin;
+}
+.mention-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.mention-item:hover, .mention-item.active {
+  background: rgba(0,113,227,0.08);
+}
+.mention-item-avatar {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.mention-item-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.mention-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mention-item-domain {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mention-tag {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* ─── Starter questions ─── */
 .home-starters {
   display: flex; flex-wrap: wrap; gap: 8px;
@@ -642,12 +706,14 @@ body {
 .login-google svg { flex-shrink: 0; }
 .auth-error {
   color: var(--delete-color); font-size: 13px; text-align: center;
-  min-height: 0; word-break: break-word; margin-top: 12px;
+  min-height: 0; word-break: break-word;
 }
+.auth-error:not(:empty) { margin-top: 10px; }
 .auth-success {
   color: var(--card-badge-ready-color); font-size: 13px; text-align: center;
-  min-height: 0; word-break: break-word; margin-top: 12px;
+  min-height: 0; word-break: break-word;
 }
+.auth-success:not(:empty) { margin-top: 10px; }
 .login-divider {
   display: flex; align-items: center; gap: 12px;
   margin: 24px 0 4px; color: var(--text-muted); font-size: 12px;
@@ -695,7 +761,22 @@ body {
   border: 1px solid var(--border);
 }
 .login-submit-secondary:hover { opacity: 0.8; }
+.login-oauth-terms {
+  font-size: 11px; color: #999; text-align: center;
+  margin: 6px 0 0; line-height: 1.4;
+}
+.login-oauth-terms a { color: #999; text-decoration: underline; }
+.login-oauth-terms a:hover { color: #ccc; }
 .login-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+.login-terms {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 12px; color: var(--text-muted); margin-top: 8px;
+  cursor: pointer; line-height: 1.5;
+}
+.login-terms input[type="checkbox"] {
+  margin-top: 3px; accent-color: var(--accent, #0071e3); flex-shrink: 0;
+}
+.login-terms a { color: var(--accent, #0071e3); text-decoration: underline; }
 .login-toggle {
   font-size: 13px; color: var(--text-muted); text-align: center;
   margin: 14px 0 0;

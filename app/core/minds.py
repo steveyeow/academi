@@ -343,6 +343,8 @@ def build_mind_system_prompt(
     book_context: str = "",
     other_minds: list[str] | None = None,
     memories: list[dict[str, Any]] | None = None,
+    user_invited: bool = False,
+    user_mentioned: bool = False,
 ) -> str:
     """Construct the layered system prompt for a mind agent."""
     name = mind["name"]
@@ -382,6 +384,23 @@ def build_mind_system_prompt(
         "- Keep responses concise (2-4 sentences for panel mode, longer for direct chat).\n"
         "- Respond in the same language as the user's question.\n"
     )
+    if user_mentioned:
+        prompt += (
+            "\nIMPORTANT: The user has directly @mentioned you by name in their message. "
+            "They are specifically asking YOU to respond. You MUST carefully read the "
+            "conversation history and the user's latest question, then directly answer "
+            "what they are asking. Do NOT introduce yourself. Do NOT give generic commentary. "
+            "Engage with the specific question or topic the user raised, providing your "
+            "unique perspective grounded in your expertise and the conversation context.\n"
+        )
+    elif user_invited:
+        prompt += (
+            "\nIMPORTANT: The user has specifically invited you to this conversation. "
+            "You must carefully read the conversation history and the user's latest question, "
+            "then directly respond to what the user is asking. Do NOT introduce yourself or "
+            "give a generic opening statement. Focus on providing your unique perspective "
+            "on the user's actual question, drawing from the conversation context and your expertise.\n"
+        )
 
     # Layer 4: Memory (privacy-aware)
     if memories:
@@ -407,6 +426,8 @@ def mind_chat(
     other_minds: list[str] | None = None,
     brief: bool = False,
     user_id: str | None = None,
+    user_invited: bool = False,
+    user_mentioned: bool = False,
 ) -> dict[str, Any]:
     """Chat as a specific mind. Returns response dict with answer, references, usage."""
     # Fetch memories
@@ -430,6 +451,8 @@ def mind_chat(
         book_context=book_context,
         other_minds=other_minds,
         memories=memories,
+        user_invited=user_invited,
+        user_mentioned=user_mentioned,
     )
 
     if brief:
@@ -479,13 +502,17 @@ def panel_chat(
     agent_ids: list[str] | None = None,
     history: list[dict[str, str]] | None = None,
     user_id: str | None = None,
+    invited_mind_ids: list[str] | None = None,
+    is_mention: bool = False,
 ) -> list[dict[str, Any]]:
     """Send a message to multiple minds concurrently. Returns list of response dicts."""
     mind_names = [m["name"] for m in minds]
+    invited_set = set(invited_mind_ids or [])
     results: list[dict[str, Any]] = []
 
     def _call(mind: dict[str, Any]) -> dict[str, Any]:
         others = [n for n in mind_names if n != mind["name"]]
+        is_invited = mind["id"] in invited_set
         return mind_chat(
             mind,
             message,
@@ -495,6 +522,8 @@ def panel_chat(
             other_minds=others,
             brief=True,
             user_id=user_id,
+            user_invited=is_invited,
+            user_mentioned=is_mention and is_invited,
         )
 
     with ThreadPoolExecutor(max_workers=min(len(minds), 5)) as executor:
