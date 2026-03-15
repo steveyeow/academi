@@ -119,6 +119,8 @@ if os.getenv("ENABLE_AUTH"):
         return {
             "tier": user.get("tier", "free"),
             "email": user.get("email", ""),
+            "subscription_status": user.get("subscription_status", "none"),
+            "subscription_ended_at": user.get("subscription_ended_at"),
             "subscription": sub_info,
         }
 

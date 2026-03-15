@@ -309,11 +309,26 @@ def init_db() -> None:
                     id UUID PRIMARY KEY,
                     email TEXT NOT NULL,
                     tier TEXT DEFAULT 'free',
+                    subscription_status TEXT DEFAULT 'none',
+                    subscription_ended_at TIMESTAMPTZ,
                     stripe_customer_id TEXT,
                     stripe_subscription_id TEXT,
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
+            # Migration: add subscription_status and subscription_ended_at
+            try:
+                _execute(conn, "SAVEPOINT sp_users_substatus")
+                _execute(conn, "ALTER TABLE users ADD COLUMN subscription_status TEXT DEFAULT 'none'")
+                _execute(conn, "RELEASE SAVEPOINT sp_users_substatus")
+            except Exception:
+                _execute(conn, "ROLLBACK TO SAVEPOINT sp_users_substatus")
+            try:
+                _execute(conn, "SAVEPOINT sp_users_subended")
+                _execute(conn, "ALTER TABLE users ADD COLUMN subscription_ended_at TIMESTAMPTZ")
+                _execute(conn, "RELEASE SAVEPOINT sp_users_subended")
+            except Exception:
+                _execute(conn, "ROLLBACK TO SAVEPOINT sp_users_subended")
             _execute(conn, """
                 CREATE TABLE IF NOT EXISTS usage (
                     id SERIAL PRIMARY KEY,
@@ -491,11 +506,22 @@ def init_db() -> None:
                     id TEXT PRIMARY KEY,
                     email TEXT NOT NULL,
                     tier TEXT DEFAULT 'free',
+                    subscription_status TEXT DEFAULT 'none',
+                    subscription_ended_at TEXT,
                     stripe_customer_id TEXT,
                     stripe_subscription_id TEXT,
                     created_at TEXT NOT NULL DEFAULT (datetime('now'))
                 )
             """)
+            # Migration: add subscription_status and subscription_ended_at
+            try:
+                _execute(conn, "ALTER TABLE users ADD COLUMN subscription_status TEXT DEFAULT 'none'")
+            except Exception:
+                pass
+            try:
+                _execute(conn, "ALTER TABLE users ADD COLUMN subscription_ended_at TEXT")
+            except Exception:
+                pass
             _execute(conn, """
                 CREATE TABLE IF NOT EXISTS usage (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1022,13 +1048,19 @@ def get_user(user_id: str) -> dict[str, Any] | None:
 
 
 def update_user_tier(user_id: str, tier: str, stripe_customer_id: str | None = None,
-                     stripe_subscription_id: str | None = None) -> None:
+                     stripe_subscription_id: str | None = None,
+                     subscription_status: str | None = None,
+                     subscription_ended_at: str | None = None) -> None:
     with get_conn() as conn:
         _execute(conn, _q("""
-            UPDATE users SET tier = ?, stripe_customer_id = COALESCE(?, stripe_customer_id),
-            stripe_subscription_id = COALESCE(?, stripe_subscription_id)
+            UPDATE users SET tier = ?,
+            stripe_customer_id = COALESCE(?, stripe_customer_id),
+            stripe_subscription_id = COALESCE(?, stripe_subscription_id),
+            subscription_status = COALESCE(?, subscription_status),
+            subscription_ended_at = COALESCE(?, subscription_ended_at)
             WHERE id = ?
-        """), (tier, stripe_customer_id, stripe_subscription_id, user_id))
+        """), (tier, stripe_customer_id, stripe_subscription_id,
+               subscription_status, subscription_ended_at, user_id))
 
 
 def find_user_by_stripe_customer(customer_id: str) -> dict[str, Any] | None:
