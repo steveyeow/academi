@@ -9,9 +9,9 @@ QUOTA_LIMITS = {
         "chat": 15,
         "mind_chat": 5,
         "discover": 3,
-        "generate_mind": 2,
+        "generate_mind": 0,
         "upload": 2,
-        "custom_minds": 1,
+        "custom_minds": 0,
     },
     "pro": {
         "chat": 200,
