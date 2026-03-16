@@ -1558,7 +1558,10 @@ async function api(path, opts = {}) {
 }
 
 async function loadAgents() {
-  try { agents = await api('/api/agents'); } catch { agents = []; }
+  try {
+    const data = await api('/api/agents');
+    agents = Array.isArray(data) ? data : [];
+  } catch { agents = []; }
   buildBookList();
 }
 
@@ -1925,6 +1928,9 @@ function appendMsg(container, role, text, sources, opts, hasMentions) {
 }
 
 function appendMindMsg(container, mindName, text) {
+  // Strip leading "[Name]: " prefix if LLM echoed it
+  const prefixRe = new RegExp(`^\\[${mindName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]:\\s*`, 'i');
+  text = text.replace(prefixRe, '');
   const el = document.createElement('div');
   el.className = 'chat-message mind-message';
   el.dataset.raw = text;
@@ -2226,6 +2232,10 @@ async function sendGlobalChat(message) {
     return;
   }
 
+  // Cancel any in-flight minds invitation from previous message
+  _mindsInviteGen++;
+  removeMindsLoading();
+
   const mentionedNames = parseMentions(message);
 
   if (!currentSessionId) await createSession();
@@ -2341,10 +2351,12 @@ async function _saveMessageToDB(sessionId, role, content, meta) {
 }
 
 let _mindsInvitedOnce = false;
+let _mindsInviteGen = 0;
 
 async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targetMindNames) {
   const sessionId = currentSessionId;
   const renderGenAtStart = _chatRenderGen;
+  const inviteGen = ++_mindsInviteGen;
 
   try {
     const mindIds = [...activeMinds.keys()];
@@ -2384,13 +2396,16 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(suggestBody),
         });
+        if (_mindsInviteGen !== inviteGen) { removeMindsLoading(); return; }
         for (const s of (suggestions.minds || [])) {
+          if (_mindsInviteGen !== inviteGen) { removeMindsLoading(); return; }
           try {
             const mind = await api('/api/minds/generate', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ name: s.name, era: s.era || '', domain: s.domain || '' }),
             });
+            if (_mindsInviteGen !== inviteGen) { removeMindsLoading(); return; }
             if (!mindIds.includes(mind.id)) {
               mindIds.push(mind.id);
               if (!activeMinds.has(mind.id)) {
@@ -2400,9 +2415,10 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
             }
           } catch (genErr) { console.warn('[minds] generate failed for', s.name, genErr); }
         }
-        _mindsInvitedOnce = true;
       } catch (suggestErr) { console.warn('[minds] suggest failed:', suggestErr); }
     }
+
+    if (_mindsInviteGen !== inviteGen) { removeMindsLoading(); return; }
 
     // Fallback: if suggest/generate yielded no minds, pick from existing seed minds
     if (!mindIds.length && allMinds.length) {
@@ -2432,6 +2448,7 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
       console.warn('[minds] No minds available at all (no seed minds either). skipSuggest=', skipSuggest, 'hasMentions=', hasMentions);
       return;
     }
+    if (_mindsInviteGen !== inviteGen) return;
 
     const history = [];
     chatBox.querySelectorAll('.chat-message:not(#loading-msg):not(.minds-loading-notice)').forEach(el => {
@@ -2455,6 +2472,8 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(panelBody),
     });
+
+    if (_mindsInviteGen !== inviteGen) return;
 
     if (panelData.responses?.length) {
       const respondedNames = new Set();
@@ -2502,6 +2521,7 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
         // User left and came back to the same session — re-render to show new messages
         onChatPageShow();
       }
+      _mindsInvitedOnce = true;
       loadMinds();
       _updateComposerMentionHint();
     }
@@ -2863,6 +2883,9 @@ async function sendBookChat(bookId, message) {
   const chatBox = document.getElementById('book-chat-messages');
   const input = document.getElementById('book-chat-input');
   const mentionedNames = parseMentions(message);
+  // Cancel any in-flight minds invitation from previous message
+  _mindsInviteGen++;
+  removeMindsLoading();
   appendMsg(chatBox, 'user', message, null, null, mentionedNames.length > 0);
   if (input) input.value = '';
   showLoading(chatBox);
@@ -4371,7 +4394,7 @@ async function renderMindDetail(mindId) {
     for (const m of existingSession.messages) {
       if (m.role === 'mind') {
         appendMindMsg(chatBox, m.mindName, m.content);
-        mindChatHistory.push({ role: 'assistant', content: `[${m.mindName}]: ${m.content}` });
+        mindChatHistory.push({ role: 'assistant', content: m.content });
       } else if (m.role === 'system-notice') {
         appendJoinNotice(chatBox, m.mindNames || []);
       } else if (m.role === 'user') {
@@ -4411,6 +4434,9 @@ async function sendMindChat(mindId, message) {
   const chatBox = document.getElementById('mind-chat-messages');
   const input = document.getElementById('mind-chat-input');
   const mentionedNames = parseMentions(message);
+  // Cancel any in-flight minds invitation from previous message
+  _mindsInviteGen++;
+  removeMindsLoading();
   appendMsg(chatBox, 'user', message, null, null, mentionedNames.length > 0);
   if (input) input.value = '';
   showLoading(chatBox);
@@ -4441,7 +4467,7 @@ async function sendMindChat(mindId, message) {
     appendMindMsg(chatBox, mindName, data.response);
 
     mindChatHistory.push({ role: 'user', content: message });
-    mindChatHistory.push({ role: 'assistant', content: `[${mindName}]: ${data.response}` });
+    mindChatHistory.push({ role: 'assistant', content: data.response });
 
     if (!activeMinds.has(mindId) && mind) {
       activeMinds.set(mindId, { id: mindId, name: mind.name });
