@@ -68,19 +68,23 @@ def embed_mind(mind_id: str, mind_data: dict[str, Any]) -> None:
         log.warning("Failed to embed mind %s: %s", mind_id, exc)
 
 
-def backfill_mind_embeddings() -> int:
-    """Embed all minds that are missing an embedding vector. Returns count."""
+def backfill_mind_embeddings(batch_size: int = 10) -> int:
+    """Embed minds missing an embedding vector, up to batch_size at a time.
+
+    Returns the number embedded in this batch. Call repeatedly until it returns 0.
+    """
     missing = list_minds_missing_embeddings()
     if not missing:
         return 0
+    batch = missing[:batch_size]
     count = 0
-    for mind in missing:
+    for mind in batch:
         try:
             embed_mind(mind["id"], mind)
             count += 1
         except Exception as exc:
             log.warning("Backfill embed failed for %s: %s", mind["name"], exc)
-    log.info("Backfilled embeddings for %d minds", count)
+    log.info("Backfilled embeddings for %d/%d minds (%d remaining)", count, len(missing), len(missing) - count)
     return count
 
 

@@ -578,12 +578,17 @@ def api_cron_seed_minds(request: Request) -> dict[str, Any]:
 
 @app.get("/api/cron/embed-minds")
 def api_cron_embed_minds(request: Request) -> dict[str, Any]:
-    """Cron-triggered embedding backfill for minds missing vectors."""
+    """Cron-triggered embedding backfill for minds missing vectors.
+    Processes up to 10 minds per call to stay within Vercel's timeout.
+    """
     _verify_cron(request)
     from .core.minds import backfill_mind_embeddings
+    from .core.db import list_minds_missing_embeddings
     try:
-        count = backfill_mind_embeddings()
-        return {"status": "ok", "embedded": count}
+        remaining_before = len(list_minds_missing_embeddings())
+        count = backfill_mind_embeddings(batch_size=10)
+        remaining_after = remaining_before - count
+        return {"status": "ok", "embedded": count, "remaining": remaining_after}
     except Exception as exc:
         log.error("Embed-minds cron failed: %s", exc)
         return {"status": "error", "detail": str(exc)}
