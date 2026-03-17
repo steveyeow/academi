@@ -3624,16 +3624,9 @@ function _buildGraphData(minds, vectorLinks) {
   let usedVectorLinks = false;
 
   if (vectorLinks && vectorLinks.length > 0) {
-    const MAX_LINKS_PER_NODE = 4;
-    const linkCounts = {};
     for (const vl of vectorLinks) {
       if (!nodeIds.has(vl.source) || !nodeIds.has(vl.target)) continue;
-      const sc = linkCounts[vl.source] || 0;
-      const tc = linkCounts[vl.target] || 0;
-      if (sc >= MAX_LINKS_PER_NODE || tc >= MAX_LINKS_PER_NODE) continue;
       links.push({ source: vl.source, target: vl.target, strength: Math.max(0.3, (vl.strength - 0.4) * 2.5) });
-      linkCounts[vl.source] = sc + 1;
-      linkCounts[vl.target] = tc + 1;
     }
     if (links.length > 0) usedVectorLinks = true;
   }
