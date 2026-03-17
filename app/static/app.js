@@ -2529,11 +2529,11 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
         }
       }
 
+      const joinedRespondedNames = newJoinedNames.filter(name => respondedNames.has(name));
+
       // Always save to DB first (even if user navigated away)
-      for (const name of newJoinedNames) {
-        if (respondedNames.has(name)) {
-          if (sessionId) _saveMessageToDB(sessionId, 'system-notice', '', { mindNames: [name] });
-        }
+      if (joinedRespondedNames.length) {
+        if (sessionId) _saveMessageToDB(sessionId, 'system-notice', '', { mindNames: joinedRespondedNames });
       }
       for (const r of panelData.responses) {
         if (r.response && !r.response.startsWith('[')) {
@@ -2547,10 +2547,8 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
         && getRoute().page === 'chat';
 
       if (stillOnSamePage) {
-        for (const name of newJoinedNames) {
-          if (respondedNames.has(name)) {
-            appendJoinNotice(chatBox, [name]);
-          }
+        if (joinedRespondedNames.length) {
+          appendJoinNotice(chatBox, joinedRespondedNames);
         }
         for (const r of panelData.responses) {
           if (r.response && !r.response.startsWith('[')) {
