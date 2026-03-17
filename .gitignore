@@ -7,6 +7,5 @@ data/
 .DS_Store
 web/
 SPEC-pro.md
-SPEC-great-minds.md
 demo.html
 .vercel
