@@ -123,7 +123,7 @@ def compute_mind_similarities() -> list[dict[str, Any]]:
     for i in range(len(ids)):
         for j in range(i + 1, len(ids)):
             s = float(sims[i, j])
-            if s > 0.45:
+            if s > 0.65:
                 results.append({
                     "source": ids[i],
                     "target": ids[j],
