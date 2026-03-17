@@ -512,9 +512,11 @@ def init_db() -> None:
             # Migration: add embedding columns to minds table
             for col, col_type in [("embedding", "BYTEA"), ("embedding_dim", "INTEGER"), ("embedding_norm", "DOUBLE PRECISION")]:
                 try:
+                    _execute(conn, f"SAVEPOINT sp_minds_{col}")
                     _execute(conn, f"ALTER TABLE minds ADD COLUMN {col} {col_type}")
+                    _execute(conn, f"RELEASE SAVEPOINT sp_minds_{col}")
                 except Exception:
-                    pass
+                    _execute(conn, f"ROLLBACK TO SAVEPOINT sp_minds_{col}")
 
             # Pro tables (SQLite)
             _execute(conn, """
