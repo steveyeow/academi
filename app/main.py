@@ -591,8 +591,10 @@ def api_cron_embed_minds(request: Request) -> dict[str, Any]:
 
 @app.get("/api/debug/embedding-status")
 def api_debug_embedding_status() -> dict[str, Any]:
-    """Diagnostic: check embedding column existence and mind counts."""
-    from .core.db import get_conn, _q, _USE_PG, _fetchone
+    """Diagnostic: check embedding column existence and mind counts.
+    Also auto-creates missing columns if they don't exist (self-healing).
+    """
+    from .core.db import get_conn, _q, _USE_PG, _fetchone, _execute
     result: dict[str, Any] = {"pg": _USE_PG}
     try:
         with get_conn() as conn:
@@ -600,6 +602,29 @@ def api_debug_embedding_status() -> dict[str, Any]:
             result["total_minds"] = row["total"] if row else 0
     except Exception as exc:
         result["total_minds_error"] = str(exc)
+
+    # Self-healing: try to add embedding columns if missing
+    columns_added = []
+    if _USE_PG:
+        for col, col_type in [("embedding", "BYTEA"), ("embedding_dim", "INTEGER"), ("embedding_norm", "DOUBLE PRECISION")]:
+            try:
+                from .core.db import DATABASE_URL, _pg, _clean_dsn
+                pg = _pg()
+                conn = pg.connect(_clean_dsn(DATABASE_URL))
+                conn.autocommit = True
+                cur = conn.cursor()
+                cur.execute(f"ALTER TABLE minds ADD COLUMN {col} {col_type}")
+                columns_added.append(col)
+                conn.close()
+            except Exception as exc:
+                err_str = str(exc)
+                if "already exists" in err_str:
+                    pass
+                else:
+                    result[f"add_{col}_error"] = err_str
+    if columns_added:
+        result["columns_added"] = columns_added
+
     try:
         with get_conn() as conn:
             row = _fetchone(conn, _q("SELECT COUNT(*) as cnt FROM minds WHERE embedding IS NOT NULL"), ())
