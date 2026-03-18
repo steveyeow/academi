@@ -15,6 +15,9 @@ let currentBookId = null;
 let libraryFilter = 'recent';
 let librarySearch = '';
 let pollTimer = null;
+let booksLoadState = 'idle';
+let mindsLoadState = 'idle';
+let _composerControlsBound = false;
 
 // Chat state
 let selectedBooks = new Map();
@@ -1572,11 +1575,18 @@ async function api(path, opts = {}) {
 }
 
 async function loadAgents() {
+  booksLoadState = 'loading';
+  _refreshOpenPopovers();
   try {
     const data = await api('/api/agents');
     agents = Array.isArray(data) ? data : [];
-  } catch { agents = []; }
+    booksLoadState = 'ready';
+  } catch {
+    agents = [];
+    booksLoadState = 'error';
+  }
   buildBookList();
+  _refreshOpenPopovers();
 }
 
 async function loadVotes() {
@@ -1916,14 +1926,33 @@ function appendMsg(container, role, text, sources, opts, hasMentions) {
     el.textContent = text;
   }
   const appendTarget = (role === 'assistant') ? el.querySelector('.feynman-msg-body') || el : el;
-  // References (RAG chunk sources)
+  // References (RAG chunk sources), grouped by book to avoid duplicate titles
   if (refs.length) {
     const refsEl = document.createElement('div');
     refsEl.className = 'msg-references';
+    const grouped = [];
+    const bookMap = new Map();
+    for (const r of refs) {
+      const key = r.book;
+      if (bookMap.has(key)) {
+        bookMap.get(key).chunks.push(r);
+      } else {
+        const entry = { book: r.book, chunks: [r] };
+        bookMap.set(key, entry);
+        grouped.push(entry);
+      }
+    }
     refsEl.innerHTML = '<div class="refs-header">References</div>' +
-      refs.map(r =>
-        `<div class="ref-item" id="ref-${r.index}"><span class="ref-num">${r.index}</span><div class="ref-body"><span class="ref-book">${esc(r.book)}</span><span class="ref-snippet">${esc(r.snippet)}</span></div></div>`
-      ).join('');
+      grouped.map(g => {
+        const nums = g.chunks.map(c => c.index);
+        const numsHtml = nums.map(n => `<span class="ref-num">${n}</span>`).join('');
+        const multi = g.chunks.length > 1;
+        const snippetsHtml = g.chunks.map(c => {
+          const numTag = multi ? `<span class="ref-snippet-num">${c.index}</span>` : '';
+          return `<div class="ref-snippet-row" id="ref-${c.index}">${numTag}<span class="ref-snippet">${esc(c.snippet)}</span></div>`;
+        }).join('');
+        return `<div class="ref-group"><div class="ref-group-header">${numsHtml}<span class="ref-book">${esc(g.book)}</span></div><div class="ref-snippets">${snippetsHtml}</div></div>`;
+      }).join('');
     appendTarget.appendChild(refsEl);
   }
   // Web sources (grounding citations)
@@ -3094,6 +3123,12 @@ function renderPopoverBookList(listId, emptyId) {
   emptyId = emptyId || 'popover-no-books';
   const list = document.getElementById(listId);
   const empty = document.getElementById(emptyId);
+  if (!list || !empty) return;
+  empty.textContent = booksLoadState === 'loading'
+    ? 'Loading books...'
+    : booksLoadState === 'error'
+      ? 'Could not load books. Try again.'
+      : 'No books in library';
   if (!allBooks.length) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
   empty.classList.add('hidden');
   list.innerHTML = allBooks.map(b => {
@@ -3141,6 +3176,11 @@ function renderPopoverMindList(listId, emptyId) {
   const list = document.getElementById(listId);
   const empty = document.getElementById(emptyId);
   if (!list || !empty) return;
+  empty.textContent = mindsLoadState === 'loading'
+    ? 'Loading minds...'
+    : mindsLoadState === 'error'
+      ? 'Could not load minds. Try again.'
+      : 'No minds yet';
   const pro = isProUser();
   document.querySelectorAll('.popover-pro-badge').forEach(b => {
     b.style.display = pro ? 'none' : '';
@@ -3536,12 +3576,18 @@ function mindColor(name) { let h = 0; for (let i = 0; i < name.length; i++) h = 
 function mindInitials(name) { return name.split(/\s+/).slice(0, 2).map(w => w[0].toUpperCase()).join(''); }
 
 async function loadMinds() {
+  mindsLoadState = 'loading';
+  _refreshOpenPopovers();
   try {
     const minds = await api('/api/minds');
     allMinds = minds;
+    mindsLoadState = 'ready';
   } catch (err) {
+    allMinds = [];
+    mindsLoadState = 'error';
     console.error('[loadMinds] Failed to fetch minds:', err.message);
   }
+  _refreshOpenPopovers();
 }
 
 let _graphSim = null;
@@ -5039,8 +5085,9 @@ async function init() {
   // before async data loading, so refreshing #/minds or #/library
   // doesn't flash the home page.
   navigate();
+  bindComposerControls();
 
-  await Promise.all([loadAgents(), loadVotes(), loadTopics(), loadMinds()]);
+  await Promise.allSettled([loadAgents(), loadVotes(), loadTopics(), loadMinds()]);
   buildBookList();
   await restoreSessions();
   renderChatHistory();
@@ -5111,6 +5158,15 @@ async function init() {
     _mindsInvitedOnce = false;
     window.location.hash = '#/';
   });
+
+  navigate();
+  ensurePolling();
+  startGreetingIconSwap();
+}
+
+function bindComposerControls() {
+  if (_composerControlsBound) return;
+  _composerControlsBound = true;
 
   // Home composer
   const homeInput = document.getElementById('home-input');
@@ -5227,10 +5283,6 @@ async function init() {
     const msg = mindInput.value.trim();
     if (msg && currentMindId) { mindInput.value = ''; sendMindChat(currentMindId, msg); }
   });
-
-  navigate();
-  ensurePolling();
-  startGreetingIconSwap();
 }
 
 function startGreetingIconSwap() {

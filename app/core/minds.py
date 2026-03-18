@@ -29,6 +29,17 @@ from .rag import build_context, retrieve_cross_book
 
 log = logging.getLogger(__name__)
 
+_SNIPPET_META_RE = re.compile(
+    r"^(?:Title:\s*[^\n]*?\s*)?(?:Description:\s*)?", re.IGNORECASE
+)
+
+
+def _clean_snippet(text: str, max_len: int = 150) -> str:
+    cleaned = _SNIPPET_META_RE.sub("", text).strip()
+    if not cleaned:
+        cleaned = text.strip()
+    return cleaned[:max_len] + ("..." if len(cleaned) > max_len else "")
+
 
 # ─── Mind embedding helpers ───
 
@@ -678,7 +689,7 @@ def mind_chat(
             references.append({
                 "index": idx,
                 "book": chunk.get("agent_name", "Unknown"),
-                "snippet": text[:150] + ("..." if len(text) > 150 else ""),
+                "snippet": _clean_snippet(text),
             })
 
     return {

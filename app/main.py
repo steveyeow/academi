@@ -173,6 +173,19 @@ def _extract_cited_numbers(text: str) -> set[int]:
     return cited
 
 
+_SNIPPET_META_RE = re.compile(
+    r"^(?:Title:\s*[^\n]*?\s*)?(?:Description:\s*)?", re.IGNORECASE
+)
+
+
+def _clean_snippet(text: str, max_len: int = 150) -> str:
+    """Strip leading metadata labels (Title:/Description:) and truncate."""
+    cleaned = _SNIPPET_META_RE.sub("", text).strip()
+    if not cleaned:
+        cleaned = text.strip()
+    return cleaned[:max_len] + ("..." if len(cleaned) > max_len else "")
+
+
 _TOKEN_MARKUP = 2  # Display multiplier for profit margin
 
 
@@ -819,7 +832,8 @@ def api_chat(agent_id: str, payload: ChatRequest, request: Request, background_t
         references.append({
             "index": idx,
             "book": agent.get("name", "Unknown"),
-            "snippet": text[:150] + ("..." if len(text) > 150 else ""),
+            "snippet": _clean_snippet(text),
+            "full_text": text.strip(),
         })
 
     resp: dict[str, Any] = {
@@ -1036,7 +1050,7 @@ def api_global_chat(payload: GlobalChatRequest, request: Request, background_tas
         references.append({
             "index": idx,
             "book": chunk.get("agent_name", "Unknown"),
-            "snippet": text[:150] + ("..." if len(text) > 150 else ""),
+            "snippet": _clean_snippet(text),
         })
 
     resp: dict[str, Any] = {
