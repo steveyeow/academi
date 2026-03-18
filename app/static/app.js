@@ -3548,6 +3548,7 @@ let _graphSim = null;
 let _graphAnim = null;
 let _graphState = null;
 let _graphResizeObserver = null;
+let _graphNodePositions = null; // in-memory cache: skip fly-in on same-session revisit
 
 function _domainTokens(m) {
   return (m.domain || '').toLowerCase().split(/[,;\/&]+/).map(d => d.trim()).filter(Boolean);
@@ -3744,6 +3745,14 @@ function _renderMindsGraph(vectorLinks, layoutPositions) {
   const tooltip = document.getElementById('minds-tooltip');
   if (!container) return;
 
+  // Save current node positions before tearing down, so same-session revisits skip the fly-in.
+  if (_graphState && _graphState.nodes) {
+    _graphNodePositions = {};
+    for (const n of _graphState.nodes) {
+      if (!n._isAdd) _graphNodePositions[n.id] = { x: n.x, y: n.y };
+    }
+  }
+
   if (_graphAnim) { cancelAnimationFrame(_graphAnim); _graphAnim = null; }
   if (_graphSim) { _graphSim.stop(); _graphSim = null; }
   if (_graphResizeObserver) { _graphResizeObserver.disconnect(); _graphResizeObserver = null; }
@@ -3756,6 +3765,14 @@ function _renderMindsGraph(vectorLinks, layoutPositions) {
   }
 
   const { nodes, links, pendingNew } = _buildGraphData(allMinds, vectorLinks, layoutPositions);
+
+  // Restore saved positions for existing nodes — new nodes have no entry and start at origin (fly-in).
+  if (_graphNodePositions) {
+    for (const n of nodes) {
+      const saved = _graphNodePositions[n.id];
+      if (saved) { n.x = saved.x; n.y = saved.y; }
+    }
+  }
   const dpr = window.devicePixelRatio || 1;
   let W = container.clientWidth || 900;
   let H = container.clientHeight || 600;
