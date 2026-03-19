@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 
 from .config import TOP_K
-from .db import get_chunks, list_agents
+from .db import get_chunks, get_chunks_batch, list_agents
 from .providers import get_provider, pick_provider, ProviderError
 
 
@@ -63,23 +63,26 @@ def retrieve_cross_book(query: str, top_k: int | None = None, agent_ids: list[st
     if agent_ids:
         ready_agents = {k: v for k, v in ready_agents.items() if k in agent_ids}
 
+    rows = get_chunks_batch(list(ready_agents.keys()))
     scored = []
-    for agent_id, agent in ready_agents.items():
-        rows = get_chunks(agent_id)
-        for row in rows:
-            vec = _bytes_to_vector(row["vector"], row["dim"])
-            denom = float(query_norm * row["norm"]) or 1.0
-            score = float(np.dot(query_vec, vec) / denom)
-            scored.append(
-                {
-                    "id": row["id"],
-                    "agent_id": agent_id,
-                    "agent_name": agent["name"],
-                    "chunk_index": row["chunk_index"],
-                    "text": row["text"],
-                    "score": score,
-                }
-            )
+    for row in rows:
+        agent_id = row["agent_id"]
+        agent = ready_agents.get(agent_id)
+        if not agent:
+            continue
+        vec = _bytes_to_vector(row["vector"], row["dim"])
+        denom = float(query_norm * row["norm"]) or 1.0
+        score = float(np.dot(query_vec, vec) / denom)
+        scored.append(
+            {
+                "id": row["id"],
+                "agent_id": agent_id,
+                "agent_name": agent["name"],
+                "chunk_index": row["chunk_index"],
+                "text": row["text"],
+                "score": score,
+            }
+        )
 
     scored.sort(key=lambda x: x["score"], reverse=True)
     return scored[:top_k]

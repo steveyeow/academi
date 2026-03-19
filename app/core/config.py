@@ -17,7 +17,7 @@ DB_PATH = Path(os.getenv("DB_PATH", DATA_DIR / "chatbook.db"))
 APP_NAME = os.getenv("APP_NAME", "Feynman")
 APP_TITLE = os.getenv("APP_TITLE", "Feynman")
 
-PROVIDER_ORDER = [p.strip().lower() for p in os.getenv("PROVIDER_ORDER", "gemini,deepseek,openai,novita,kimi,anthropic").split(",") if p.strip()]
+PROVIDER_ORDER = [p.strip().lower() for p in os.getenv("PROVIDER_ORDER", "deepseek,gemini,openai,novita,kimi,anthropic").split(",") if p.strip()]
 
 CHAT_PROVIDER = os.getenv("CHAT_PROVIDER", "auto").lower()
 EMBED_PROVIDER = os.getenv("EMBED_PROVIDER", "auto").lower()

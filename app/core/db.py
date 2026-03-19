@@ -640,6 +640,17 @@ def get_chunks(agent_id: str) -> list[dict[str, Any]]:
         ), (agent_id,))
 
 
+def get_chunks_batch(agent_ids: list[str]) -> list[dict[str, Any]]:
+    """Fetch chunks for multiple agents in a single query."""
+    if not agent_ids:
+        return []
+    placeholders = ",".join(["?"] * len(agent_ids))
+    with get_conn() as conn:
+        return _fetchall(conn, _q(
+            f"SELECT id, agent_id, chunk_index, text, vector, dim, norm FROM chunks WHERE agent_id IN ({placeholders}) ORDER BY agent_id, chunk_index ASC"
+        ), tuple(agent_ids))
+
+
 def _get_or_create_book_session(agent_id: str, user_id: str) -> str:
     """Find or create a book-type chat session for the given agent + user."""
     with get_conn() as conn:

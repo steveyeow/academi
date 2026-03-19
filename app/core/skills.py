@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -149,9 +150,21 @@ def resolve_skills(agent: dict[str, Any], query: str, **kwargs: Any) -> SkillRes
 
 
 def resolve_multi_agent(agents: list[dict[str, Any]], query: str, **kwargs: Any) -> list[SkillResult]:
-    """Resolve skills for multiple agents (for global chat)."""
-    results = []
-    for agent in agents:
-        result = resolve_skills(agent, query, **kwargs)
-        results.append(result)
-    return results
+    """Resolve skills for multiple agents in parallel."""
+    if len(agents) <= 1:
+        return [resolve_skills(a, query, **kwargs) for a in agents]
+
+    results: list[SkillResult | None] = [None] * len(agents)
+    with ThreadPoolExecutor(max_workers=min(len(agents), 6)) as pool:
+        future_to_idx = {
+            pool.submit(resolve_skills, agent, query, **kwargs): i
+            for i, agent in enumerate(agents)
+        }
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            try:
+                results[idx] = future.result()
+            except Exception as exc:
+                log.warning("Skill resolution failed for agent %s: %s", agents[idx].get("id"), exc)
+                results[idx] = SkillResult(context="", skill_name="none")
+    return results  # type: ignore[return-value]
