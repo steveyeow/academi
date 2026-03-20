@@ -717,7 +717,7 @@ function renderLandingPage() {
         <div class="lp-fg-center">
           <div class="lp-hero-left">
             <h1 class="lp-hero-headline">Chat with books.<br>Great minds join in.</h1>
-            <p class="lp-hero-sub">An interactive knowledge network built on the world's most important books and great minds. Turn any book into a conversation that goes beyond the page, or start from a topic to learn across relevant books — with a library that grows as you explore and an evolving network of agent-simulated great minds that joins your discussion, learning and growing with you.</p>
+            <p class="lp-hero-sub">An interactive knowledge network built on the world's most important books and great minds. Turn any book into a conversation that goes beyond the page, or start from a topic to learn across a library that grows as you explore, with an evolving network of agent-simulated great minds joins your discussion, learn and grow with you.</p>
             <button class="lp-hero-cta" id="lp-hero-cta">${window.FEYNMAN_PRO ? 'Get Started Free' : 'Start Exploring'}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
           </div>
           <div class="lp-chat-card">
