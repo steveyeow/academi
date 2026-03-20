@@ -221,7 +221,7 @@ function renderLoginPage() {
           </div>
         </div>
         <h1 class="login-welcome">Welcome to <span class="login-welcome-brand">Feynman</span></h1>
-        <p class="login-subtitle">Chat with books. Learn with great minds.</p>
+        <p class="login-subtitle">An interactive knowledge network of books, minds, and ideas.</p>
         <button id="google-signin-btn" class="login-google" type="button">
           <svg width="20" height="20" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18A10.96 10.96 0 0 0 1 12c0 1.77.42 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
           Continue with Google
@@ -717,7 +717,7 @@ function renderLandingPage() {
         <div class="lp-fg-center">
           <div class="lp-hero-left">
             <h1 class="lp-hero-headline">Chat with books.<br>Great minds join in.</h1>
-            <p class="lp-hero-sub">Turn any book into a conversation that goes beyond the page, or start from a topic to learn across all relevant books with a library that auto-grows as books are mentioned. An evolving network of agent-simulated great minds joins the discussion along the way.</p>
+            <p class="lp-hero-sub">An interactive knowledge network built on the world's most important books and great minds. Turn any book into a conversation that goes beyond the page, or start from a topic to learn across relevant books — with a library that grows as you explore and an evolving network of agent-simulated great minds that joins your discussion, learning and growing with you.</p>
             <button class="lp-hero-cta" id="lp-hero-cta">${window.FEYNMAN_PRO ? 'Get Started Free' : 'Start Exploring'}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
           </div>
           <div class="lp-chat-card">
@@ -749,7 +749,7 @@ function renderLandingPage() {
                 </div>
                 <div class="chat-composer lp-composer">
                   <div class="selected-chips" id="lp-selected-chips"></div>
-                  <textarea class="composer-input" id="lp-composer-input" rows="1" placeholder="Ask about books or topics — great minds will join in..." readonly></textarea>
+                  <textarea class="composer-input" id="lp-composer-input" rows="1" placeholder="Explore books, topics, or ideas — minds join the conversation..." readonly></textarea>
                   <div class="composer-toolbar">
                     <div class="composer-left">
                       <button type="button" class="composer-icon-btn" disabled>
