@@ -1898,6 +1898,7 @@ function appendMsg(container, role, text, sources, opts, hasMentions) {
     content.className = 'msg-content';
     content.setAttribute('dir', 'auto');
     let html = renderMarkdown(cleaned);
+    // Convert [1], [2], [1, 2] etc. to clickable citation superscripts
     if (refs.length || webSrcs.length) {
       html = html.replace(/\[(\d+(?:\s*,\s*\d+)*)\]/g, (match, nums) => {
         const indices = nums.split(/\s*,\s*/).map(n => parseInt(n, 10));
@@ -2010,9 +2011,9 @@ function appendMsg(container, role, text, sources, opts, hasMentions) {
 
 function appendMindMsg(container, mindName, text) {
   const raw = String(text ?? '');
+  const cleaned = raw.replace(/<div\b[^>]*>|<\/div>/gi, '').trim();
   // Strip leading "[Name]: " prefix if LLM echoed it
   const prefixRe = new RegExp(`^\\[${mindName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]:\\s*`, 'i');
-  const cleaned = raw.replace(prefixRe, '').replace(/<div\b[^>]*>|<\/div>/gi, '').trim();
   const el = document.createElement('div');
   el.className = 'chat-message mind-message';
   el.setAttribute('dir', 'auto');
@@ -2031,7 +2032,7 @@ function appendMindMsg(container, mindName, text) {
   const content = document.createElement('div');
   content.className = 'msg-content mind-msg-content';
   content.setAttribute('dir', 'auto');
-  content.innerHTML = renderMarkdown(cleaned);
+  content.innerHTML = renderMarkdown(cleaned.replace(prefixRe, '').trim());
   body.appendChild(content);
   el.appendChild(body);
   container.appendChild(el);
@@ -3751,7 +3752,7 @@ function renderMarkdown(text) {
     t = esc(t);
     t = t.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     t = t.replace(/\*(.+?)\*/g, '<em>$1</em>');
-    t = t.replace(/\[([^\]]+)\]\(([^\s\u0600-\u06FF]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    t = t.replace(/\[([^\]]+)\]\(([^\s\u0600-\u06FF)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
     t = t.replace(/\x00IC(\d+)\x00/g, (_, i) => inlineCodes[+i]);
     return t;
   }
