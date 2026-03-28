@@ -3203,13 +3203,18 @@ async function _autoAddComposerMind(listId, emptyId, query) {
   state.lastAutoQuery = query;
   renderPopoverMindList(listId, emptyId);
   try {
-    if (!allMinds.some(m => (m.name || '').toLowerCase() === query.toLowerCase())) {
-      const mind = await api('/api/minds/generate', {
+    let mind = allMinds.find(m => (m.name || '').toLowerCase() === query.toLowerCase());
+    if (!mind) {
+      mind = await api('/api/minds/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: query }),
       });
       if (!allMinds.some(m => m.id === mind.id)) allMinds.push(mind);
+    }
+    if (mind && !selectedMinds.has(mind.id)) {
+      selectedMinds.set(mind.id, mind);
+      renderSelectedChips();
     }
   } catch (err) {
     if (state.searchingQuery !== query) return;
@@ -3356,9 +3361,9 @@ function renderPopoverMindList(listId, emptyId) {
     if (!pro) {
       empty.textContent = 'Upgrade to Pro to invite minds';
     } else if (query && (state.searchingQuery === query || state.timer)) {
-      empty.textContent = `Looking up "${query}" — will invite it if found...`;
+      empty.textContent = `Inviting "${query}" to the network...`;
     } else if (query) {
-      empty.textContent = `Couldn't find "${query}" — try another name`;
+      empty.textContent = `Could not invite "${query}" — try another name`;
     }
     list.innerHTML = '';
     return;
