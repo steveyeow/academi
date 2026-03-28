@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/pro", tags=["pro"])
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
 STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "").strip()
-APP_URL = os.getenv("APP_URL", "https://feynman-pro.vercel.app").strip()
+APP_URL = os.getenv("APP_URL", "https://feynman.wiki").strip()
 
 stripe.api_key = STRIPE_SECRET_KEY
 

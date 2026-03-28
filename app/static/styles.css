@@ -1297,6 +1297,22 @@ body {
   font-size: 11px; color: var(--text-muted); padding: 0 12px 6px;
   line-height: 1.4; opacity: 0.7;
 }
+.popover-search {
+  width: calc(100% - 24px);
+  margin: 0 12px 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+.popover-search:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
 .popover-book-item {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 12px; border-radius: 8px; cursor: pointer;

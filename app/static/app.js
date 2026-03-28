@@ -3107,6 +3107,8 @@ function togglePopover(popId, listId, emptyId) {
   if (show) {
     pop.classList.remove('hidden');
     renderPopoverBookList(listId, emptyId);
+    const search = pop.querySelector('.popover-search');
+    if (search) search.focus();
   }
 }
 
@@ -3120,6 +3122,8 @@ function toggleMindPopover(popId, listId, emptyId) {
   if (show) {
     pop.classList.remove('hidden');
     renderPopoverMindList(listId, emptyId);
+    const search = pop.querySelector('.popover-search');
+    if (search) search.focus();
   }
 }
 
@@ -3131,20 +3135,149 @@ window.togglePopover = togglePopover;
 window.toggleMindPopover = toggleMindPopover;
 window.closeAllPopovers = closeAllPopovers;
 
+const _composerBookSearchStates = new Map();
+const _composerMindSearchStates = new Map();
+
+function _getComposerSearchState(states, key) {
+  if (!states.has(key)) {
+    states.set(key, {
+      timer: null,
+      searchingQuery: null,
+      lastQuery: '',
+      lastAutoQuery: null,
+      discoveredIds: new Set(),
+    });
+  }
+  return states.get(key);
+}
+
+function _getPopoverSearchInput(list) {
+  const pop = list ? list.closest('.composer-popover') : null;
+  return pop ? pop.querySelector('.popover-search') : null;
+}
+
+async function _autoDiscoverComposerBook(listId, emptyId, query) {
+  const state = _getComposerSearchState(_composerBookSearchStates, listId);
+  if (state.searchingQuery === query) return;
+  state.searchingQuery = query;
+  state.lastAutoQuery = query;
+  renderPopoverBookList(listId, emptyId);
+  try {
+    const data = await api('/api/search-book', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+    if (state.searchingQuery !== query) return;
+    (data.books || []).forEach(b => { if (b.id) state.discoveredIds.add(b.id); });
+    await loadAgents();
+    buildBookList();
+  } catch (err) {
+    if (state.searchingQuery !== query) return;
+  } finally {
+    if (state.searchingQuery === query) state.searchingQuery = null;
+    renderPopoverBookList(listId, emptyId);
+  }
+}
+
+function _scheduleComposerBookDiscover(listId, emptyId, query) {
+  const state = _getComposerSearchState(_composerBookSearchStates, listId);
+  clearTimeout(state.timer);
+  state.timer = null;
+  if (!query || query.length < 2) return;
+  const q = query.toLowerCase();
+  const hasLocal = allBooks.some(b =>
+    b.title.toLowerCase().includes(q) ||
+    (b.author || '').toLowerCase().includes(q) ||
+    (b.category || '').toLowerCase().includes(q) ||
+    state.discoveredIds.has(b.id)
+  );
+  if (hasLocal || state.searchingQuery === query || state.lastAutoQuery === query) return;
+  state.timer = setTimeout(() => _autoDiscoverComposerBook(listId, emptyId, query), 600);
+}
+
+async function _autoAddComposerMind(listId, emptyId, query) {
+  const state = _getComposerSearchState(_composerMindSearchStates, listId);
+  if (state.searchingQuery === query) return;
+  state.searchingQuery = query;
+  state.lastAutoQuery = query;
+  renderPopoverMindList(listId, emptyId);
+  try {
+    if (!allMinds.some(m => (m.name || '').toLowerCase() === query.toLowerCase())) {
+      const mind = await api('/api/minds/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: query }),
+      });
+      if (!allMinds.some(m => m.id === mind.id)) allMinds.push(mind);
+    }
+  } catch (err) {
+    if (state.searchingQuery !== query) return;
+  } finally {
+    if (state.searchingQuery === query) state.searchingQuery = null;
+    renderPopoverMindList(listId, emptyId);
+  }
+}
+
+function _scheduleComposerMindAdd(listId, emptyId, query, pro) {
+  const state = _getComposerSearchState(_composerMindSearchStates, listId);
+  clearTimeout(state.timer);
+  state.timer = null;
+  if (!pro || !query || query.length < 2) return;
+  const q = query.toLowerCase();
+  const hasLocal = allMinds.some(m =>
+    (m.name || '').toLowerCase().includes(q) ||
+    (m.domain || '').toLowerCase().includes(q) ||
+    (m.era || '').toLowerCase().includes(q)
+  );
+  if (hasLocal || state.searchingQuery === query || state.lastAutoQuery === query) return;
+  state.timer = setTimeout(() => _autoAddComposerMind(listId, emptyId, query), 600);
+}
+
 function renderPopoverBookList(listId, emptyId) {
   listId = listId || 'popover-book-list';
   emptyId = emptyId || 'popover-no-books';
   const list = document.getElementById(listId);
   const empty = document.getElementById(emptyId);
   if (!list || !empty) return;
-  empty.textContent = booksLoadState === 'loading'
+  const searchInput = _getPopoverSearchInput(list);
+  const query = (searchInput?.value || '').trim();
+  const state = _getComposerSearchState(_composerBookSearchStates, listId);
+  if (state.lastQuery !== query) {
+    state.lastQuery = query;
+    state.lastAutoQuery = null;
+    state.discoveredIds.clear();
+  }
+  const defaultEmptyText = booksLoadState === 'loading'
     ? 'Loading books...'
     : booksLoadState === 'error'
       ? 'Could not load books. Try again.'
       : 'No books in library';
+  empty.textContent = defaultEmptyText;
   if (!allBooks.length) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  let filtered = allBooks;
+  if (query) {
+    const q = query.toLowerCase();
+    filtered = allBooks.filter(b =>
+      b.title.toLowerCase().includes(q) ||
+      (b.author || '').toLowerCase().includes(q) ||
+      (b.category || '').toLowerCase().includes(q) ||
+      state.discoveredIds.has(b.id)
+    );
+  }
+  _scheduleComposerBookDiscover(listId, emptyId, query);
+  if (!filtered.length) {
+    empty.classList.remove('hidden');
+    if (query && (state.searchingQuery === query || state.timer)) {
+      empty.textContent = `Looking up "${query}" — will add it if found...`;
+    } else if (query) {
+      empty.textContent = `Couldn't find "${query}" — try a different title or author`;
+    }
+    list.innerHTML = '';
+    return;
+  }
   empty.classList.add('hidden');
-  list.innerHTML = allBooks.map(b => {
+  list.innerHTML = filtered.map(b => {
     const sel = selectedBooks.has(b.id);
     const tag = b.available ? ' (indexed)' : b.status === 'catalog' ? ' (catalog)' : '';
     return `<div class="popover-book-item ${sel?'selected':''}" data-bid="${b.id}">
@@ -3189,20 +3322,49 @@ function renderPopoverMindList(listId, emptyId) {
   const list = document.getElementById(listId);
   const empty = document.getElementById(emptyId);
   if (!list || !empty) return;
-  empty.textContent = mindsLoadState === 'loading'
+  const searchInput = _getPopoverSearchInput(list);
+  const query = (searchInput?.value || '').trim();
+  const state = _getComposerSearchState(_composerMindSearchStates, listId);
+  if (state.lastQuery !== query) {
+    state.lastQuery = query;
+    state.lastAutoQuery = null;
+  }
+  const defaultEmptyText = mindsLoadState === 'loading'
     ? 'Loading minds...'
     : mindsLoadState === 'error'
       ? 'Could not load minds. Try again.'
       : 'No minds yet';
+  empty.textContent = defaultEmptyText;
   const pro = isProUser();
   document.querySelectorAll('.popover-pro-badge').forEach(b => {
     b.style.display = pro ? 'none' : '';
     b.onclick = () => { closeAllPopovers(); showProOverlay(); };
   });
   if (!allMinds.length) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
-  empty.classList.add('hidden');
   const sorted = [...allMinds].sort((a, b) => a.name.localeCompare(b.name));
-  list.innerHTML = sorted.map(m => {
+  const filtered = query
+    ? sorted.filter(m => {
+      const q = query.toLowerCase();
+      return (m.name || '').toLowerCase().includes(q) ||
+        (m.domain || '').toLowerCase().includes(q) ||
+        (m.era || '').toLowerCase().includes(q);
+    })
+    : sorted;
+  _scheduleComposerMindAdd(listId, emptyId, query, pro);
+  if (!filtered.length) {
+    empty.classList.remove('hidden');
+    if (!pro) {
+      empty.textContent = 'Upgrade to Pro to invite minds';
+    } else if (query && (state.searchingQuery === query || state.timer)) {
+      empty.textContent = `Looking up "${query}" — will invite it if found...`;
+    } else if (query) {
+      empty.textContent = `Couldn't find "${query}" — try another name`;
+    }
+    list.innerHTML = '';
+    return;
+  }
+  empty.classList.add('hidden');
+  list.innerHTML = filtered.map(m => {
     const sel = selectedMinds.has(m.id);
     const color = mindColor(m.name);
     const initials = mindInitials(m.name);
@@ -5194,11 +5356,17 @@ function bindComposerControls() {
   uploadBtn.addEventListener('click', e => { e.stopPropagation(); togglePopover('home-popover', 'home-popover-book-list', 'home-popover-no-books'); });
   document.getElementById('home-popover-upload').addEventListener('click', () => { closeAllPopovers(); uploadInput.click(); });
   uploadInput.addEventListener('change', () => { if (uploadInput.files.length) { handleFileUpload(uploadInput.files); uploadInput.value = ''; } });
+  document.getElementById('home-popover-search').addEventListener('input', () => {
+    renderPopoverBookList('home-popover-book-list', 'home-popover-no-books');
+  });
 
   // Home minds button → minds popover
   document.getElementById('home-minds-btn').addEventListener('click', e => {
     e.stopPropagation();
     toggleMindPopover('home-minds-popover', 'home-popover-mind-list', 'home-popover-no-minds');
+  });
+  document.getElementById('home-minds-search').addEventListener('input', () => {
+    renderPopoverMindList('home-popover-mind-list', 'home-popover-no-minds');
   });
 
   // Chat page composer
@@ -5214,11 +5382,17 @@ function bindComposerControls() {
   chatPlusBtn.addEventListener('click', e => { e.stopPropagation(); togglePopover('chat-popover', 'popover-book-list', 'popover-no-books'); });
   document.getElementById('popover-upload-action').addEventListener('click', () => { closeAllPopovers(); chatUploadInput.click(); });
   chatUploadInput.addEventListener('change', () => { if (chatUploadInput.files.length) { handleFileUpload(chatUploadInput.files); chatUploadInput.value = ''; } });
+  document.getElementById('chat-popover-search').addEventListener('input', () => {
+    renderPopoverBookList('popover-book-list', 'popover-no-books');
+  });
 
   // Chat minds button → minds popover
   document.getElementById('chat-minds-btn').addEventListener('click', e => {
     e.stopPropagation();
     toggleMindPopover('chat-minds-popover', 'popover-mind-list', 'popover-no-minds');
+  });
+  document.getElementById('chat-minds-search').addEventListener('input', () => {
+    renderPopoverMindList('popover-mind-list', 'popover-no-minds');
   });
   document.addEventListener('click', e => {
     document.querySelectorAll('.composer-popover').forEach(pop => {
