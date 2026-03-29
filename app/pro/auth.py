@@ -33,6 +33,7 @@ PUBLIC_PATHS = {
     "/terms",
     "/privacy",
     "/robots.txt",
+    "/sitemap",
     "/sitemap.xml",
     "/llms.txt",
     "/llms-full.txt",

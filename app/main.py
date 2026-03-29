@@ -540,6 +540,12 @@ Sitemap: {_SITE_URL}/sitemap.xml
     return PlainTextResponse(content, media_type="text/plain; charset=utf-8")
 
 
+@app.get("/sitemap")
+def sitemap_redirect():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/sitemap.xml", status_code=301)
+
+
 @app.get("/sitemap.xml")
 def sitemap_xml():
     from fastapi.responses import Response
