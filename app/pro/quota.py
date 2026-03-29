@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException, Request
 
-from ..core.db import count_usage_today, count_user_uploads, record_usage
+from ..core.db import count_usage_today, count_user_uploads, count_ai_books_this_month, record_usage
 
 QUOTA_LIMITS = {
     "free": {
@@ -12,6 +12,7 @@ QUOTA_LIMITS = {
         "generate_mind": 0,
         "upload": 2,
         "custom_minds": 0,
+        "ai_book": 0,
     },
     "pro": {
         "chat": 200,
@@ -20,7 +21,13 @@ QUOTA_LIMITS = {
         "generate_mind": 30,
         "upload": 30,
         "custom_minds": 30,
+        "ai_book": 3,
     },
+}
+
+AI_BOOK_MONTHLY_LIMITS = {
+    "free": 0,
+    "pro": 3,
 }
 
 UPLOAD_TOTAL_LIMITS = {
@@ -77,6 +84,43 @@ def check_upload_limit(request: Request) -> None:
                 "used": used,
                 "tier": tier,
                 "message": f"Upload limit reached ({used}/{limit} books). Upgrade to Pro to upload more.",
+            },
+        )
+
+
+def check_ai_book_quota(request: Request) -> None:
+    """Check monthly AI book creation limit. Free users cannot create books."""
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        return
+
+    tier = getattr(request.state, "tier", "free")
+    limit = AI_BOOK_MONTHLY_LIMITS.get(tier, 0)
+
+    if limit == 0:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "quota_exceeded",
+                "action": "ai_book",
+                "limit": 0,
+                "used": 0,
+                "tier": tier,
+                "message": "AI book writing is a Pro feature. Upgrade to create custom books.",
+            },
+        )
+
+    used = count_ai_books_this_month(user_id)
+    if used >= limit:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "quota_exceeded",
+                "action": "ai_book",
+                "limit": limit,
+                "used": used,
+                "tier": tier,
+                "message": f"Monthly AI book limit reached ({used}/{limit}). Limit resets next month.",
             },
         )
 

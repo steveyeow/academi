@@ -247,6 +247,27 @@ def init_db() -> None:
             """)
             _execute(conn, "CREATE INDEX IF NOT EXISTS idx_session_messages_session ON session_messages(session_id)")
 
+            # AI-generated books
+            _execute(conn, """
+                CREATE TABLE IF NOT EXISTS ai_books (
+                    id TEXT PRIMARY KEY,
+                    agent_id TEXT NOT NULL REFERENCES agents(id),
+                    user_id TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'outlining',
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    outline_json TEXT NOT NULL DEFAULT '[]',
+                    content_json TEXT NOT NULL DEFAULT '{}',
+                    preferences_json TEXT NOT NULL DEFAULT '{}',
+                    chapters_total INTEGER DEFAULT 0,
+                    chapters_written INTEGER DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+            _execute(conn, "CREATE INDEX IF NOT EXISTS idx_ai_books_user ON ai_books(user_id)")
+            _execute(conn, "CREATE INDEX IF NOT EXISTS idx_ai_books_agent ON ai_books(agent_id)")
+
             # ── Migrations: add columns that may be missing in old deployments ──
             # Run these BEFORE creating indexes on those columns.
 
@@ -475,6 +496,28 @@ def init_db() -> None:
                 )
             """)
             _execute(conn, "CREATE INDEX IF NOT EXISTS idx_session_messages_session ON session_messages(session_id)")
+
+            # AI-generated books
+            _execute(conn, """
+                CREATE TABLE IF NOT EXISTS ai_books (
+                    id TEXT PRIMARY KEY,
+                    agent_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'outlining',
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    outline_json TEXT NOT NULL DEFAULT '[]',
+                    content_json TEXT NOT NULL DEFAULT '{}',
+                    preferences_json TEXT NOT NULL DEFAULT '{}',
+                    chapters_total INTEGER DEFAULT 0,
+                    chapters_written INTEGER DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (agent_id) REFERENCES agents(id)
+                )
+            """)
+            _execute(conn, "CREATE INDEX IF NOT EXISTS idx_ai_books_user ON ai_books(user_id)")
+            _execute(conn, "CREATE INDEX IF NOT EXISTS idx_ai_books_agent ON ai_books(agent_id)")
 
             # Migration: add user_id column if missing (existing deployments)
             try:
@@ -1026,23 +1069,28 @@ def create_chat_session(title: str = "New chat", session_type: str = "chat",
             "mind_id": mind_id, "meta": meta or {}, "updated_at": now, "created_at": now}
 
 
+def _user_filter(user_id: str | None) -> tuple[str, tuple]:
+    """Return a SQL fragment + params that match the given user_id (or IS NULL)."""
+    if user_id:
+        return "user_id = ?", (user_id,)
+    return "user_id IS NULL", ()
+
+
 def list_chat_sessions(user_id: str | None = None) -> list[dict[str, Any]]:
-    if not user_id:
-        return []
+    filt, params = _user_filter(user_id)
     with get_conn() as conn:
         rows = _fetchall(conn, _q(
-            "SELECT * FROM chat_sessions WHERE user_id = ? ORDER BY updated_at DESC"
-        ), (user_id,))
+            f"SELECT * FROM chat_sessions WHERE {filt} ORDER BY updated_at DESC"
+        ), params)
         return [_row_to_session(r) for r in rows]
 
 
 def get_chat_session(session_id: str, user_id: str | None = None) -> dict[str, Any] | None:
-    if not user_id:
-        return None
+    filt, params = _user_filter(user_id)
     with get_conn() as conn:
         row = _fetchone(conn, _q(
-            "SELECT * FROM chat_sessions WHERE id = ? AND user_id = ?"
-        ), (session_id, user_id))
+            f"SELECT * FROM chat_sessions WHERE id = ? AND {filt}"
+        ), (session_id, *params))
         if not row:
             return None
         return _row_to_session(row)
@@ -1051,33 +1099,31 @@ def get_chat_session(session_id: str, user_id: str | None = None) -> dict[str, A
 def update_chat_session(session_id: str, title: str | None = None,
                         meta: dict[str, Any] | None = None,
                         user_id: str | None = None) -> None:
-    if not user_id:
-        return
+    filt, params = _user_filter(user_id)
     with get_conn() as conn:
         session = _fetchone(conn, _q(
-            "SELECT user_id FROM chat_sessions WHERE id = ? AND user_id = ?"
-        ), (session_id, user_id))
+            f"SELECT id FROM chat_sessions WHERE id = ? AND {filt}"
+        ), (session_id, *params))
         if not session:
             return
         if title is not None:
-            _execute(conn, _q("UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ? AND user_id = ?"),
-                     (title, _utcnow(), session_id, user_id))
+            _execute(conn, _q(f"UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ? AND {filt}"),
+                     (title, _utcnow(), session_id, *params))
         if meta is not None:
-            _execute(conn, _q("UPDATE chat_sessions SET meta_json = ?, updated_at = ? WHERE id = ? AND user_id = ?"),
-                     (json.dumps(meta), _utcnow(), session_id, user_id))
+            _execute(conn, _q(f"UPDATE chat_sessions SET meta_json = ?, updated_at = ? WHERE id = ? AND {filt}"),
+                     (json.dumps(meta), _utcnow(), session_id, *params))
 
 
 def delete_chat_session(session_id: str, user_id: str | None = None) -> bool:
-    if not user_id:
-        return False
+    filt, params = _user_filter(user_id)
     with get_conn() as conn:
         session = _fetchone(conn, _q(
-            "SELECT id FROM chat_sessions WHERE id = ? AND user_id = ?"
-        ), (session_id, user_id))
+            f"SELECT id FROM chat_sessions WHERE id = ? AND {filt}"
+        ), (session_id, *params))
         if not session:
             return False
         _execute(conn, _q("DELETE FROM session_messages WHERE session_id = ?"), (session_id,))
-        cur = _execute(conn, _q("DELETE FROM chat_sessions WHERE id = ? AND user_id = ?"), (session_id, user_id))
+        cur = _execute(conn, _q(f"DELETE FROM chat_sessions WHERE id = ? AND {filt}"), (session_id, *params))
         return cur.rowcount > 0
 
 
@@ -1097,31 +1143,29 @@ def _row_to_session(row: dict[str, Any]) -> dict[str, Any]:
 def add_session_message(session_id: str, role: str, content: str,
                         meta: dict[str, Any] | None = None,
                         user_id: str | None = None) -> dict[str, Any]:
-    if not user_id:
-        raise ValueError("Authentication required")
+    filt, params = _user_filter(user_id)
     msg_id = str(uuid.uuid4())
     now = _utcnow()
     with get_conn() as conn:
         session = _fetchone(conn, _q(
-            "SELECT id FROM chat_sessions WHERE id = ? AND user_id = ?"
-        ), (session_id, user_id))
+            f"SELECT id FROM chat_sessions WHERE id = ? AND {filt}"
+        ), (session_id, *params))
         if not session:
             raise ValueError("Session not found or access denied")
         _execute(conn, _q(
             "INSERT INTO session_messages (id, session_id, role, content, meta_json, created_at) VALUES (?, ?, ?, ?, ?, ?)"
         ), (msg_id, session_id, role, content, json.dumps(meta or {}), now))
-        _execute(conn, _q("UPDATE chat_sessions SET updated_at = ? WHERE id = ? AND user_id = ?"),
-                 (now, session_id, user_id))
+        _execute(conn, _q(f"UPDATE chat_sessions SET updated_at = ? WHERE id = ? AND {filt}"),
+                 (now, session_id, *params))
     return {"id": msg_id, "role": role, "content": content, "meta": meta or {}, "created_at": now}
 
 
 def list_session_messages(session_id: str, user_id: str | None = None) -> list[dict[str, Any]]:
-    if not user_id:
-        return []
+    filt, params = _user_filter(user_id)
     with get_conn() as conn:
         session = _fetchone(conn, _q(
-            "SELECT id FROM chat_sessions WHERE id = ? AND user_id = ?"
-        ), (session_id, user_id))
+            f"SELECT id FROM chat_sessions WHERE id = ? AND {filt}"
+        ), (session_id, *params))
         if not session:
             return []
         rows = _fetchall(conn, _q(
@@ -1240,3 +1284,124 @@ def migrate_messages_to_sessions() -> int:
                 migrated += 1
 
         return migrated
+
+
+# ─── AI Books CRUD ───
+
+def count_ai_books_this_month(user_id: str) -> int:
+    """Count AI books created by a user in the current calendar month."""
+    if _USE_PG:
+        sql = ("SELECT COUNT(*) as cnt FROM ai_books "
+               "WHERE user_id = %s AND created_at >= date_trunc('month', CURRENT_TIMESTAMP)")
+    else:
+        sql = ("SELECT COUNT(*) as cnt FROM ai_books "
+               "WHERE user_id = ? AND created_at >= date('now', 'start of month')")
+    with get_conn() as conn:
+        row = _fetchone(conn, sql, (user_id,))
+        return row["cnt"] if row else 0
+
+
+def create_ai_book(
+    agent_id: str, user_id: str, title: str, description: str,
+    outline: dict[str, Any], preferences: dict[str, Any],
+) -> str:
+    book_id = str(uuid.uuid4())
+    now = _utcnow()
+    chapters_total = len(outline.get("chapters", []))
+    with get_conn() as conn:
+        _execute(conn, _q(
+            "INSERT INTO ai_books (id, agent_id, user_id, status, title, description, "
+            "outline_json, content_json, preferences_json, chapters_total, chapters_written, "
+            "created_at, updated_at) VALUES (?, ?, ?, 'outlining', ?, ?, ?, '{}', ?, ?, 0, ?, ?)"
+        ), (book_id, agent_id, user_id, title, description,
+            json.dumps(outline, ensure_ascii=False),
+            json.dumps(preferences, ensure_ascii=False),
+            chapters_total, now, now))
+    return book_id
+
+
+def get_ai_book(book_id: str) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        row = _fetchone(conn, _q("SELECT * FROM ai_books WHERE id = ?"), (book_id,))
+        if not row:
+            return None
+        return _row_to_ai_book(row)
+
+
+def get_ai_book_by_agent(agent_id: str) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        row = _fetchone(conn, _q("SELECT * FROM ai_books WHERE agent_id = ?"), (agent_id,))
+        if not row:
+            return None
+        return _row_to_ai_book(row)
+
+
+def list_ai_books(user_id: str) -> list[dict[str, Any]]:
+    with get_conn() as conn:
+        rows = _fetchall(conn, _q(
+            "SELECT * FROM ai_books WHERE user_id = ? ORDER BY updated_at DESC"
+        ), (user_id,))
+        return [_row_to_ai_book(r) for r in rows]
+
+
+def update_ai_book_outline(book_id: str, outline: dict[str, Any]) -> None:
+    now = _utcnow()
+    chapters_total = len(outline.get("chapters", []))
+    with get_conn() as conn:
+        _execute(conn, _q(
+            "UPDATE ai_books SET outline_json = ?, chapters_total = ?, "
+            "title = ?, updated_at = ? WHERE id = ?"
+        ), (json.dumps(outline, ensure_ascii=False), chapters_total,
+            outline.get("title", "Untitled"), now, book_id))
+
+
+def update_ai_book_status(book_id: str, status: str) -> None:
+    now = _utcnow()
+    with get_conn() as conn:
+        _execute(conn, _q(
+            "UPDATE ai_books SET status = ?, updated_at = ? WHERE id = ?"
+        ), (status, now, book_id))
+        # Sync agent status when book completes, fails, or is cancelled
+        if status in ("completed", "failed", "cancelled"):
+            row = _fetchone(conn, _q("SELECT agent_id, chapters_written FROM ai_books WHERE id = ?"), (book_id,))
+            if row:
+                if status == "completed":
+                    agent_status = "ready"
+                elif status == "cancelled":
+                    agent_status = "ready" if row["chapters_written"] > 0 else "error"
+                else:
+                    agent_status = "error"
+                _execute(conn, _q("UPDATE agents SET status = ? WHERE id = ?"),
+                         (agent_status, row["agent_id"]))
+
+
+def update_ai_book_chapter(book_id: str, chapter_num: int, chapter_data: dict[str, Any]) -> None:
+    now = _utcnow()
+    with get_conn() as conn:
+        row = _fetchone(conn, _q("SELECT content_json, chapters_written FROM ai_books WHERE id = ?"), (book_id,))
+        if not row:
+            return
+        content = json.loads(row["content_json"] or "{}")
+        content[str(chapter_num)] = chapter_data
+        written = row["chapters_written"] + 1
+        _execute(conn, _q(
+            "UPDATE ai_books SET content_json = ?, chapters_written = ?, updated_at = ? WHERE id = ?"
+        ), (json.dumps(content, ensure_ascii=False), written, now, book_id))
+
+
+def _row_to_ai_book(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "agent_id": row["agent_id"],
+        "user_id": row["user_id"],
+        "status": row["status"],
+        "title": row["title"],
+        "description": row["description"],
+        "outline": json.loads(row["outline_json"] or "{}"),
+        "content": json.loads(row["content_json"] or "{}"),
+        "preferences": json.loads(row["preferences_json"] or "{}"),
+        "chapters_total": row["chapters_total"],
+        "chapters_written": row["chapters_written"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }

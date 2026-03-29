@@ -53,6 +53,13 @@ from .core.db import (
     update_agent_status,
     update_chat_session,
     upvote,
+    create_ai_book,
+    get_ai_book,
+    get_ai_book_by_agent,
+    get_chunks,
+    list_ai_books,
+    update_ai_book_outline,
+    update_ai_book_status,
 )
 from .core.indexer import index_text
 from .core.providers import GeminiProvider, ProviderError, chat_with_fallback, pick_provider
@@ -70,6 +77,7 @@ from .core.minds import (
 from .core.skills import resolve_multi_agent, resolve_skills
 from .core.sources import fetch_book_content, fetch_wikipedia_summary
 from .core.text_utils import extract_text_from_file
+from .core.ai_writer import generate_outline, refine_outline, write_full_book
 
 log = logging.getLogger(__name__)
 
@@ -136,6 +144,11 @@ def _check_upload_limit(request: Request) -> None:
     if os.getenv("ENABLE_AUTH"):
         from .pro.quota import check_upload_limit
         check_upload_limit(request)
+
+def _check_ai_book_quota(request: Request) -> None:
+    if os.getenv("ENABLE_AUTH"):
+        from .pro.quota import check_ai_book_quota
+        check_ai_book_quota(request)
 
 def _track_usage(request: Request, action: str, tokens: int = 0) -> None:
     if os.getenv("ENABLE_AUTH"):
@@ -482,6 +495,70 @@ def privacy_page() -> HTMLResponse:
     return HTMLResponse((static_dir / "privacy.html").read_text(encoding="utf-8"))
 
 
+@app.get("/share/{agent_id}", response_class=HTMLResponse)
+def share_page(agent_id: str, request: Request) -> HTMLResponse:
+    """Serve a lightweight page with OG/Twitter meta tags for social sharing, then redirect to the reader."""
+    from html import escape as html_esc
+    agent = get_agent(agent_id)
+    book = get_ai_book_by_agent(agent_id) if agent else None
+    title = html_esc(book["title"] if book and book.get("title") else (agent["title"] if agent else "Untitled"))
+    outline = book.get("outline") if book else None
+    subtitle = html_esc(outline.get("subtitle", "") if isinstance(outline, dict) else "")
+    chapter_count = len(outline.get("chapters", [])) if isinstance(outline, dict) else 0
+    desc = html_esc(subtitle or f"A {chapter_count}-chapter book created with Feynman AI")
+    base = str(request.base_url).rstrip("/")
+    reader_url = f"{base}/#/read/{html_esc(agent_id)}"
+    og_image_url = f"{base}/api/og-image/{html_esc(agent_id)}"
+
+    html = f"""<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<title>{title} — Feynman</title>
+<meta name="description" content="{desc}">
+<meta property="og:type" content="article">
+<meta property="og:title" content="{title}">
+<meta property="og:description" content="{desc}">
+<meta property="og:image" content="{og_image_url}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:url" content="{base}/share/{html_esc(agent_id)}">
+<meta property="og:site_name" content="Feynman">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{title}">
+<meta name="twitter:description" content="{desc}">
+<meta name="twitter:image" content="{og_image_url}">
+<meta http-equiv="refresh" content="0;url={reader_url}">
+</head><body>
+<p>Redirecting to <a href="{reader_url}">{title}</a>…</p>
+</body></html>"""
+    return HTMLResponse(html)
+
+
+@app.get("/api/og-image/{agent_id}")
+def api_og_image(agent_id: str):
+    """Generate a dynamic Open Graph image for a book."""
+    from fastapi.responses import Response
+    from .core.og_image import generate_og_image
+
+    agent = get_agent(agent_id)
+    book = get_ai_book_by_agent(agent_id) if agent else None
+    title = book["title"] if book and book.get("title") else (agent["name"] if agent else "Untitled")
+    outline = book.get("outline") if book else None
+    subtitle = outline.get("subtitle", "") if isinstance(outline, dict) else ""
+    chapter_count = len(outline.get("chapters", [])) if isinstance(outline, dict) else 0
+    total_words = book.get("total_words", 0) if book else 0
+
+    png_bytes = generate_og_image(
+        title=title,
+        subtitle=subtitle,
+        chapter_count=chapter_count,
+        total_words=total_words,
+    )
+    return Response(content=png_bytes, media_type="image/png", headers={
+        "Cache-Control": "public, max-age=86400",
+    })
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     return {"status": "ok", "app": config.APP_NAME}
@@ -562,6 +639,7 @@ def api_search_book(payload: SearchBookRequest, request: Request, background_tas
         agent = get_agent(agent_id)
         if agent and agent["status"] == "catalog":
             background_tasks.add_task(_learn_agent, agent_id)
+    _track_usage(request, "discover")
     return {"books": results, "usage": _usage_dict(result)}
 
 
@@ -1213,6 +1291,262 @@ def api_upvote(vote_id: str, background_tasks: BackgroundTasks) -> dict[str, Any
     return result
 
 
+# ─── AI Book Writing endpoints ───
+
+class AIBookStartRequest(BaseModel):
+    description: str = Field(..., min_length=10)
+    language: str = "en"
+    preferences: dict[str, Any] = Field(default_factory=dict)
+
+
+class AIBookChatRequest(BaseModel):
+    message: str = Field(..., min_length=1)
+    history: list[HistoryMessage] | None = None
+
+
+@app.post("/api/ai-books/start")
+def api_ai_book_start(payload: AIBookStartRequest, request: Request) -> dict[str, Any]:
+    """Start a new AI book project: generate outline from description."""
+    _check_ai_book_quota(request)
+    user_id = _get_user_id(request) or "anon"
+
+    try:
+        outline, ai_message, usage = generate_outline(
+            payload.description, payload.preferences, payload.language,
+        )
+    except ProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Outline generation failed: {exc}")
+
+    title = outline.get("title", "Untitled Book")
+    prefs = {**payload.preferences, "language": payload.language}
+
+    # Resolve creator display name
+    creator_name = ""
+    if os.getenv("ENABLE_AUTH"):
+        from .core.db import get_user as _get_user_fn
+        u = _get_user_fn(user_id)
+        if u:
+            email = u.get("email", "")
+            creator_name = email.split("@")[0] if email else ""
+
+    meta = {
+        "title": title,
+        "author": "AI",
+        "is_ai_generated": True,
+        "creator_name": creator_name or "User",
+        "creator_user_id": user_id,
+        "description": outline.get("subtitle", ""),
+    }
+    agent_id = create_agent(
+        name=title, agent_type="ai_book", source="ai_writer",
+        meta=meta, user_id=user_id,
+    )
+    # Agent starts as "indexing" by default; override to "outlining"
+    update_agent_status(agent_id, "outlining", meta)
+
+    book_id = create_ai_book(
+        agent_id=agent_id, user_id=user_id, title=title,
+        description=payload.description, outline=outline, preferences=prefs,
+    )
+
+    _track_usage(request, "ai_book", usage.get("total_tokens", 0))
+    return {
+        "id": book_id,
+        "agent_id": agent_id,
+        "title": title,
+        "outline": outline,
+        "ai_message": ai_message,
+        "usage": usage,
+    }
+
+
+@app.post("/api/ai-books/{book_id}/chat")
+def api_ai_book_chat(book_id: str, payload: AIBookChatRequest, request: Request) -> dict[str, Any]:
+    """Refine the book outline through conversation."""
+    _check_quota(request, "chat")
+    user_id = _get_user_id(request) or "anon"
+
+    book = get_ai_book(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="AI book not found")
+    if book["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if book["status"] not in ("outlining",):
+        raise HTTPException(status_code=409, detail=f"Book is in '{book['status']}' state, cannot edit outline")
+
+    history = None
+    if payload.history:
+        history = [{"role": m.role, "content": m.content} for m in payload.history]
+
+    try:
+        updated_outline, response_text, usage = refine_outline(
+            book["outline"], payload.message, history=history,
+        )
+    except ProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Refinement failed: {exc}")
+
+    update_ai_book_outline(book_id, updated_outline)
+    # Sync title to agent
+    update_agent_meta(book["agent_id"], {"title": updated_outline.get("title", book["title"])})
+
+    _track_usage(request, "ai_book", usage.get("total_tokens", 0))
+    return {
+        "outline": updated_outline,
+        "response": response_text,
+        "usage": usage,
+    }
+
+
+@app.post("/api/ai-books/{book_id}/confirm")
+def api_ai_book_confirm(book_id: str, request: Request, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    """Confirm the outline and start writing chapters in background."""
+    user_id = _get_user_id(request) or "anon"
+
+    book = get_ai_book(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="AI book not found")
+    if book["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if book["status"] not in ("outlining",):
+        raise HTTPException(status_code=409, detail=f"Book is in '{book['status']}' state")
+
+    update_ai_book_status(book_id, "confirmed")
+    update_agent_status(book["agent_id"], "writing", {
+        "title": book["title"],
+        "is_ai_generated": True,
+        "creator_name": book.get("preferences", {}).get("creator_name", "User"),
+        "creator_user_id": user_id,
+    })
+
+    background_tasks.add_task(write_full_book, book_id)
+
+    return {"status": "writing", "chapters_total": book["chapters_total"]}
+
+
+@app.post("/api/ai-books/{book_id}/cancel")
+def api_ai_book_cancel(book_id: str, request: Request) -> dict[str, Any]:
+    """Cancel a book that is currently being written."""
+    user_id = _get_user_id(request) or "anon"
+
+    book = get_ai_book(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="AI book not found")
+    if book["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if book["status"] not in ("writing", "confirmed"):
+        raise HTTPException(status_code=409, detail=f"Book is in '{book['status']}' state, cannot cancel")
+
+    update_ai_book_status(book_id, "cancelled")
+    return {"status": "cancelled", "chapters_written": book.get("chapters_written", 0)}
+
+
+@app.get("/api/ai-books/{book_id}")
+def api_ai_book_get(book_id: str, request: Request) -> dict[str, Any]:
+    """Get AI book details including writing progress."""
+    user_id = _get_user_id(request) or "anon"
+    book = get_ai_book(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="AI book not found")
+    if book["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return book
+
+
+@app.get("/api/ai-books")
+def api_ai_books_list(request: Request) -> list[dict[str, Any]]:
+    """List the current user's AI book projects."""
+    user_id = _get_user_id(request) or "anon"
+    return list_ai_books(user_id)
+
+
+# ─── Book Reader endpoint ───
+
+@app.get("/api/agents/{agent_id}/read")
+def api_read_book(agent_id: str) -> dict[str, Any]:
+    """Return book content for the reader. AI books return chapters; regular books return reassembled chunks."""
+    agent = get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    title = agent.get("name", "Untitled")
+    author = agent.get("source", "")
+    meta = agent.get("meta") or {}
+
+    # AI-written book: return structured chapters
+    ai_book = get_ai_book_by_agent(agent_id)
+    if ai_book and ai_book.get("content"):
+        outline = ai_book.get("outline") or {}
+        chapters_outline = outline.get("chapters", [])
+        content = ai_book["content"]
+        chapters = []
+        for ch in chapters_outline:
+            ch_data = content.get(str(ch["number"]), {})
+            if ch_data.get("content"):
+                chapters.append({
+                    "number": ch["number"],
+                    "title": ch["title"],
+                    "content": ch_data["content"],
+                    "word_count": ch_data.get("word_count", len(ch_data["content"].split())),
+                })
+        creator = meta.get("creator_name", "") or ai_book.get("preferences", {}).get("creator_name", "")
+        if not creator and ai_book.get("user_id"):
+            creator = ai_book["user_id"].split("@")[0] if "@" in ai_book["user_id"] else ai_book["user_id"]
+        if creator in ("anon", ""):
+            creator = ""
+        author_display = f"{creator} · AI" if creator else "AI"
+        return {
+            "type": "ai_book",
+            "title": meta.get("title") or title,
+            "subtitle": outline.get("subtitle", ""),
+            "author": author_display,
+            "chapters": chapters,
+            "total_words": sum(c["word_count"] for c in chapters),
+        }
+
+    # Regular book: reassemble chunks into readable text
+    if agent.get("status") != "ready":
+        raise HTTPException(status_code=409, detail="Book is not ready for reading")
+
+    chunks = get_chunks(agent_id)
+    if not chunks:
+        raise HTTPException(status_code=404, detail="No content available")
+
+    # Reassemble chunks, removing overlap duplicates
+    full_text = _reassemble_chunks([c["text"] for c in chunks])
+    paragraphs = [p.strip() for p in full_text.split("\n") if p.strip()]
+
+    return {
+        "type": "indexed",
+        "title": meta.get("title") or title,
+        "subtitle": meta.get("description", ""),
+        "author": meta.get("author") or author,
+        "paragraphs": paragraphs,
+        "total_words": len(full_text.split()),
+    }
+
+
+def _reassemble_chunks(chunks: list[str], overlap: int = 120) -> str:
+    """Reassemble overlapping text chunks into continuous text."""
+    if not chunks:
+        return ""
+    parts = [chunks[0]]
+    for chunk in chunks[1:]:
+        prev = parts[-1]
+        # Find the overlap region
+        best = 0
+        check_len = min(overlap * 2, len(prev), len(chunk))
+        for size in range(check_len, 10, -1):
+            if prev.endswith(chunk[:size]):
+                best = size
+                break
+        parts.append(chunk[best:])
+    return "".join(parts)
+
+
 # ─── Great Minds endpoints ───
 
 class MindGenerateRequest(BaseModel):
@@ -1365,6 +1699,7 @@ def api_suggest_minds(payload: MindSuggestRequest, request: Request) -> dict[str
         excluded = {n.lower() for n in payload.exclude}
         suggestions = [s for s in suggestions if s.get("name", "").lower() not in excluded]
 
+    _track_usage(request, "generate_mind")
     return {"minds": suggestions, "usage": usage}
 
 

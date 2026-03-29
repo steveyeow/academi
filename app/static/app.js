@@ -35,6 +35,14 @@ let loadingTopics = new Set();
 // Onboarding state
 let userName = localStorage.getItem('userName') || '';
 
+// AI Book Writing state
+let _writeBookId = null;
+let _writeBookAgentId = null;
+let _writeBookOutline = null;
+let _writeBookPolling = null;
+let _writeBookGen = 0;
+let _writeBookAbort = null;
+
 // ─── Pro Auth State ───
 let proConfig = null;
 let supabaseClient = null;
@@ -348,6 +356,7 @@ function renderSubscriptionPage() {
       'Everything in Free',
       'Upload more books',
       'Discover more books in chat & library',
+      'Write your own book on any topic',
       'Great minds continuously join chats',
       'Invite great minds into your chats',
       'Upload your own minds or from any source',
@@ -456,6 +465,7 @@ function showProOverlay() {
       'Everything in Free',
       'Upload more books',
       'Discover more books in chat & library',
+      'Write your own book on any topic',
       'Great minds continuously join chats',
       'Invite great minds into your chats',
       'Upload your own minds or from any source',
@@ -561,6 +571,8 @@ function getRoute() {
   if (mm) return { page: 'mind', id: mm[1] };
   const m = hash.match(/^#\/book\/(.+)$/);
   if (m) return { page: 'book', id: m[1] };
+  const rm = hash.match(/^#\/read\/(.+)$/);
+  if (rm) return { page: 'read', id: rm[1] };
   return { page: 'home' };
 }
 
@@ -1524,6 +1536,9 @@ function navigate() {
       currentBookId = route.id;
       renderBookDetail(route.id);
       break;
+    case 'read':
+      renderReader(route.id);
+      break;
   }
 }
 window.addEventListener('hashchange', navigate);
@@ -1675,6 +1690,8 @@ function buildBookList() {
       skills: meta.skills || {},
       isUploaded: a.type === 'upload',
       isCatalog: a.type === 'catalog',
+      isAIGenerated: a.type === 'ai_book',
+      creatorName: meta.creator_name || '',
       upvotes: 0,
       created_at: a.created_at || '',
     };
@@ -2057,15 +2074,31 @@ function showMindsLoading(c) {
 }
 function removeMindsLoading() { document.getElementById('minds-loading-msg')?.remove(); }
 
-function showLoading(c) {
+let _loadingInterval = null;
+function showLoading(c, stages) {
   const el = document.createElement('div');
   el.className = 'chat-message assistant';
   el.id = 'loading-msg';
   el.innerHTML = '<span class="loading-dot">Thinking...</span>';
   c.appendChild(el);
   c.scrollTop = c.scrollHeight;
+
+  if (_loadingInterval) { clearInterval(_loadingInterval); _loadingInterval = null; }
+  if (stages && stages.length > 0) {
+    let idx = 0;
+    _loadingInterval = setInterval(() => {
+      idx++;
+      const dot = el.querySelector('.loading-dot');
+      if (!dot || idx >= stages.length) { clearInterval(_loadingInterval); _loadingInterval = null; return; }
+      dot.textContent = stages[idx];
+      c.scrollTop = c.scrollHeight;
+    }, 4000);
+  }
 }
-function removeLoading() { document.getElementById('loading-msg')?.remove(); }
+function removeLoading() {
+  if (_loadingInterval) { clearInterval(_loadingInterval); _loadingInterval = null; }
+  document.getElementById('loading-msg')?.remove();
+}
 
 // ─── Chat sessions (DB-backed) ───
 
@@ -2081,7 +2114,8 @@ async function restoreSessions() {
       activeMinds: new Map(Object.entries(s.meta?.activeMinds || {})),
       updatedAt: new Date(s.updated_at).getTime(),
       mindId: s.mind_id || null,
-      sessionType: s.session_type || 'chat',
+      sessionType: s.meta?.write_book ? 'write_book' : (s.session_type || 'chat'),
+      meta: s.meta || {},
     }));
     // Migrate from localStorage if DB is empty but localStorage has data
     if (!chatSessions.length) {
@@ -2201,6 +2235,9 @@ async function switchToSession(id) {
     renderSelectedChips();
     restoreChatSidebar(session.messages);
     renderChatHistory();
+
+    // Restore write-book state (outline card / writing progress)
+    _restoreWriteBookState(session, chatBox);
   }
   if (getRoute().page !== 'chat') {
     window.location.hash = '#/chat';
@@ -2235,12 +2272,14 @@ function updateSessionTitle(message) {
 function renderChatHistory() {
   const list = document.getElementById('chat-history-list');
   if (!list) return;
-  list.innerHTML = chatSessions.map(s =>
-    `<div class="history-item-wrap ${s.id === currentSessionId ? 'active' : ''}" data-sid="${s.id}">
-      <button class="history-item">${esc(s.title)}</button>
+  list.innerHTML = chatSessions.map(s => {
+    const isWriteBook = s.sessionType === 'write_book' || s.meta?.write_book;
+    const icon = isWriteBook ? '<svg class="history-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>' : '';
+    return `<div class="history-item-wrap ${s.id === currentSessionId ? 'active' : ''}" data-sid="${s.id}">
+      <button class="history-item">${icon}${esc(s.title)}</button>
       <button class="history-delete" title="Delete">&times;</button>
-    </div>`
-  ).join('');
+    </div>`;
+  }).join('');
   list.querySelectorAll('.history-item-wrap').forEach(wrap => {
     wrap.querySelector('.history-item').addEventListener('click', () => switchToSession(wrap.dataset.sid));
     wrap.querySelector('.history-delete').addEventListener('click', e => { e.stopPropagation(); deleteSession(wrap.dataset.sid); });
@@ -2306,6 +2345,7 @@ function hideChatRightSidebar() {
 let pendingHomeMessage = null;
 let _inflightSessionId = null;
 let _chatRenderGen = 0; // bumped each time onChatPageShow re-renders the chat box
+let _globalChatAbort = null;
 
 async function sendGlobalChat(message) {
   const chatBox = document.getElementById('chat-messages');
@@ -2316,9 +2356,16 @@ async function sendGlobalChat(message) {
     return;
   }
 
+  // Abort any in-flight global chat request from previous message
+  if (_globalChatAbort) { _globalChatAbort.abort(); _globalChatAbort = null; }
+  removeLoading();
+
   // Cancel any in-flight minds invitation from previous message
   _mindsInviteGen++;
   removeMindsLoading();
+
+  const abort = new AbortController();
+  _globalChatAbort = abort;
 
   const mentionedNames = parseMentions(message);
 
@@ -2362,6 +2409,7 @@ async function sendGlobalChat(message) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: abort.signal,
       });
 
       const sources = (data.sources || []).map(s => ({ id: s.agent_id, name: s.agent_name }));
@@ -2401,6 +2449,7 @@ async function sendGlobalChat(message) {
 
     _inviteMindsToChat(chatBox, message, bookContext, agentIds, mentionedNames);
   } catch (err) {
+    if (err.name === 'AbortError') return;
     _inflightSessionId = null;
     if (currentSessionId !== sentSessionId) return;
     if (_chatRenderGen !== renderGenAtStart) {
@@ -2455,6 +2504,7 @@ let _mindsInvitedOnce = false;
 let _mindsInviteGen = 0;
 const _sessionSaveChains = new Map();
 
+/** When the system auto-suggests minds, ask before calling panel-chat. @mentions skip this (user already invited). */
 function showMindJoinPrompt(chatBox, mindNames, inviteGen) {
   return new Promise((resolve) => {
     if (_mindsInviteGen !== inviteGen) {
@@ -2705,7 +2755,11 @@ function handleChatSend() {
   if (!msg) return;
   input.value = '';
   input.style.height = 'auto';
-  sendGlobalChat(msg);
+  if (_isWriteBookSession()) {
+    _handleWriteBookMessage(msg);
+  } else {
+    sendGlobalChat(msg);
+  }
 }
 
 async function onChatPageShow() {
@@ -2752,6 +2806,8 @@ async function onChatPageShow() {
   if (_inflightSessionId === currentSessionId) {
     showLoading(chatBox);
   }
+
+  _restoreWriteBookState(session, chatBox);
 }
 
 // ─── Chat sidebar (right) ───
@@ -2926,20 +2982,30 @@ function coverInitials(title) { return title.split(/[\s:—]+/).filter(w => w.le
 function renderBookGrid(container, books) {
   if (!books.length) { container.innerHTML = '<div class="empty-state"><p>No books found.</p></div>'; return; }
   container.innerHTML = books.map(b => {
-    const cover = `<div class="card-cover-gen" style="background:${coverColor(b.title)}"><span>${coverInitials(b.title)}</span></div>`;
+    const coverBg = b.isAIGenerated ? 'background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)' : `background:${coverColor(b.title)}`;
+    const cover = `<div class="card-cover-gen" style="${coverBg}"><span>${coverInitials(b.title)}</span></div>`;
     let statusBadge = '';
-    if (b.status === 'indexing') statusBadge = '<span class="card-badge indexing">Indexing...</span>';
-    else if (b.status === 'catalog') statusBadge = '<span class="card-badge catalog">Catalog</span>';
-    else if (b.status === 'ready') statusBadge = '<span class="card-badge ready">Ready</span>';
-    const deleteBtn = (b.isUploaded || b.isCatalog) && b.agentId ? `<button class="card-delete-btn" onclick="event.stopPropagation();deleteBook('${esc(b.agentId)}')" title="Delete">&times;</button>` : '';
+    if (b.isAIGenerated && (b.status === 'writing' || b.status === 'outlining' || b.status === 'confirmed')) {
+      statusBadge = '<span class="card-badge indexing">Writing...</span>';
+    } else if (b.status === 'indexing') {
+      statusBadge = '<span class="card-badge indexing">Indexing...</span>';
+    } else if (b.status === 'catalog') {
+      statusBadge = '<span class="card-badge catalog">Catalog</span>';
+    } else if (b.status === 'ready') {
+      statusBadge = '<span class="card-badge ready">Indexed</span>';
+    }
+    const deleteBtn = (b.isUploaded || b.isCatalog || b.isAIGenerated) && b.agentId ? `<button class="card-delete-btn" onclick="event.stopPropagation();deleteBook('${esc(b.agentId)}')" title="Delete">&times;</button>` : '';
+    const isReady = b.status === 'ready' && b.agentId;
+    const readOverlay = isReady ? `<div class="card-cover-overlay" onclick="event.stopPropagation();window.location.hash='#/read/${esc(b.agentId)}'"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>Read</span></div>` : '';
     return `<div class="book-card" onclick="selectBookForChat('${esc(b.id)}')">
       ${deleteBtn}
-      ${cover}
-      <div class="card-body"><h3 class="card-title">${esc(b.title)}</h3><p class="card-author">${esc(b.author)}</p></div>
+      <div class="card-cover-wrap">${cover}${readOverlay}</div>
+      <div class="card-body"><h3 class="card-title">${esc(b.title)}</h3><p class="card-author">${b.isAIGenerated ? (b.creatorName ? `by ${esc(b.creatorName)} · AI` : 'AI-generated') : esc(b.author)}</p></div>
       <div class="card-footer">
         ${statusBadge}
-        <button class="card-chat-btn" onclick="event.stopPropagation();selectBookForChat('${esc(b.id)}')">Chat &rarr;</button>
-        <button class="upvote-btn" onclick="event.stopPropagation();handleUpvote('${esc(b.title)}')">&#9650; ${b.upvotes||''}</button>
+        <button class="card-chat-btn" onclick="event.stopPropagation();selectBookForChat('${esc(b.id)}')">Chat</button>
+        ${isReady ? `<button class="card-share-btn" onclick="event.stopPropagation();shareBook('${esc(b.title)}','${esc(b.agentId)}')" title="Share"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></button>` : ''}
+        <button class="upvote-btn" onclick="event.stopPropagation();handleUpvote('${esc(b.title)}')">&#9650;${b.upvotes ? ' ' + b.upvotes : ''}</button>
       </div>
     </div>`;
   }).join('');
@@ -2962,6 +3028,577 @@ async function deleteBook(agentId) {
   }
 }
 window.deleteBook = deleteBook;
+
+// ─── Share book ───
+async function shareBook(title, agentId) {
+  const url = `${window.location.origin}/share/${agentId}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    _showToast('Link copied');
+  } catch (_) {
+    prompt('Copy this link:', url);
+  }
+}
+
+function _showToast(msg) {
+  let t = document.getElementById('share-toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'share-toast';
+    t.className = 'share-toast';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.classList.remove('show');
+  void t.offsetWidth;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+window.shareBook = shareBook;
+
+// ─── AI Book Writing ───
+
+async function _restoreWriteBookState(session, chatBox) {
+  const meta = session?.meta || session?.books?.get?.('_meta') || {};
+  if (!(session?.sessionType === 'write_book' || meta.write_book)) {
+    if (_writeBookAbort) { _writeBookAbort.abort(); _writeBookAbort = null; }
+    _writeBookId = null;
+    _writeBookOutline = null;
+    _hideBookCanvas();
+    return;
+  }
+  const aiBookId = meta.ai_book_id;
+  if (!aiBookId) {
+    if (_writeBookAbort) { _writeBookAbort.abort(); _writeBookAbort = null; }
+    _writeBookId = null;
+    _writeBookOutline = null;
+    _hideBookCanvas();
+    return;
+  }
+  _writeBookId = aiBookId;
+  _writeBookAgentId = meta.agent_id || null;
+  try {
+    const book = await api(`/api/ai-books/${aiBookId}`);
+    _writeBookOutline = book.outline;
+    if (book.status === 'writing') {
+      _startWritingPoll(aiBookId, chatBox);
+    } else if (book.status === 'completed' || book.status === 'cancelled' || book.status === 'failed') {
+      _showBookCanvas(_renderCanvasWritingProgress(book));
+    } else if (book.status === 'outlining') {
+      _showBookCanvas(_renderCanvasOutline(book.outline, aiBookId));
+    }
+  } catch (e) { console.warn('Failed to restore write-book state:', e); }
+}
+
+async function startWriteBook() {
+  if (!currentUser && window.FEYNMAN_PRO) {
+    window.location.hash = '#/login';
+    return;
+  }
+  if (window.FEYNMAN_PRO && !isProUser()) {
+    showProOverlay();
+    return;
+  }
+  // Create a write_book session and jump to chat
+  await createSession();
+  const session = chatSessions.find(s => s.id === currentSessionId);
+  if (session) {
+    session.sessionType = 'write_book';
+    session.title = 'New book';
+  }
+  // Update session type on server
+  try {
+    await api(`/api/sessions/${currentSessionId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ meta: { write_book: true } }),
+    });
+  } catch (e) { console.warn('Failed to update session type:', e); }
+
+  window.location.hash = '#/chat';
+  // Wait for chat page to render, then show the AI greeting
+  setTimeout(() => {
+    const chatBox = document.getElementById('chat-messages');
+    if (!chatBox) return;
+    const greeting = "I'd love to help you create a book. Tell me what you're interested in — a person, an idea, a skill, or even a book that doesn't exist yet but you wish it did.\n\nYou can be as specific or broad as you like. For example:\n- *\"A biography of Elon Musk focused on his engineering decisions\"*\n- *\"A beginner's guide to quantum computing in plain language\"*\n- *\"The history of coffee and how it shaped civilization\"*";
+    appendMsg(chatBox, 'assistant', greeting);
+    _queueSessionMessage(currentSessionId, 'assistant', greeting);
+  }, 100);
+}
+window.startWriteBook = startWriteBook;
+
+function _showBookCanvas(html) {
+  const canvas = document.getElementById('book-canvas');
+  const content = document.getElementById('book-canvas-content');
+  if (!canvas || !content) return;
+  content.innerHTML = html;
+  if (!canvas.classList.contains('visible')) {
+    canvas.classList.add('visible');
+    document.getElementById('chat-right-sidebar')?.classList.remove('visible');
+  }
+}
+
+function _hideBookCanvas() {
+  const canvas = document.getElementById('book-canvas');
+  if (!canvas) return;
+  canvas.classList.remove('visible');
+  canvas.style.width = '';
+  const chatMain = document.querySelector('.chat-with-sidebar .chat-main');
+  if (chatMain) { chatMain.style.flex = ''; chatMain.style.width = ''; }
+}
+
+// ─── Canvas resize handle ───
+(function initCanvasResize() {
+  let startX = 0, startChatW = 0, startCanvasW = 0, dragging = false;
+  const handle = document.getElementById('book-canvas-resize');
+  if (!handle) return;
+
+  handle.addEventListener('mousedown', e => {
+    const canvas = document.getElementById('book-canvas');
+    const chatMain = document.querySelector('.chat-with-sidebar .chat-main');
+    if (!canvas?.classList.contains('visible') || !chatMain) return;
+    e.preventDefault();
+    dragging = true;
+    startX = e.clientX;
+    startChatW = chatMain.getBoundingClientRect().width;
+    startCanvasW = canvas.getBoundingClientRect().width;
+    handle.classList.add('dragging');
+    document.body.classList.add('canvas-resizing');
+    canvas.style.transition = 'none';
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const canvas = document.getElementById('book-canvas');
+    const chatMain = document.querySelector('.chat-with-sidebar .chat-main');
+    if (!canvas || !chatMain) return;
+    const newChatW = Math.max(280, startChatW + dx);
+    const newCanvasW = Math.max(360, startCanvasW - dx);
+    chatMain.style.flex = 'none';
+    chatMain.style.width = newChatW + 'px';
+    canvas.style.width = newCanvasW + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    const handle = document.getElementById('book-canvas-resize');
+    handle?.classList.remove('dragging');
+    document.body.classList.remove('canvas-resizing');
+    const canvas = document.getElementById('book-canvas');
+    if (canvas) canvas.style.transition = '';
+  });
+})();
+
+function _renderCanvasOutline(outline, bookId) {
+  const chapters = outline.chapters || [];
+  const totalWords = chapters.reduce((s, c) => s + (c.estimated_words || 0), 0);
+  const chapterList = chapters.map((c, i) => {
+    const points = (c.key_points || []).map(p => `<li>${esc(p)}</li>`).join('');
+    const expandedCls = i === 0 ? ' expanded' : '';
+    return `<div class="canvas-chapter${expandedCls}" onclick="this.classList.toggle('expanded')">
+      <div class="canvas-ch-header">
+        <span class="canvas-ch-num">${c.number}</span>
+        <span class="canvas-ch-title">${esc(c.title)}</span>
+        <svg class="canvas-ch-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="canvas-ch-detail">
+        <p class="canvas-ch-summary">${esc(c.summary)}</p>
+        ${points ? `<ul class="canvas-ch-points">${points}</ul>` : ''}
+        <span class="canvas-ch-words">~${(c.estimated_words || 0).toLocaleString()} words</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="canvas-book-header">
+    <div class="canvas-book-title">${esc(outline.title || 'Untitled')}</div>
+    <div class="canvas-book-subtitle">${esc(outline.subtitle || '')}</div>
+    <div class="canvas-book-meta">
+      <span class="canvas-book-stats">${chapters.length} chapters · ~${Math.round(totalWords / 1000)}k words</span>
+      <button class="canvas-confirm-btn" onclick="_confirmWriteBook('${esc(bookId || '')}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>Start Writing</button>
+    </div>
+  </div>
+  <div class="canvas-divider"></div>
+  <div class="canvas-chapters">${chapterList}</div>`;
+}
+
+function _renderWritingProgress(book) {
+  const chapters = book.outline?.chapters || [];
+  const total = book.chapters_total || chapters.length;
+  const written = book.chapters_written || 0;
+  const pct = total > 0 ? Math.round((written / total) * 100) : 0;
+  const content = book.content || {};
+  const isCancelled = book.status === 'cancelled';
+  const isFinished = book.status === 'completed' || book.status === 'failed' || isCancelled;
+
+  const chList = chapters.map(c => {
+    const chData = content[String(c.number)];
+    let stateClass = 'pending', icon = '—', detail = 'Waiting...', words = '';
+    if (chData && chData.content) {
+      stateClass = 'done'; icon = '✓'; detail = 'Completed';
+      words = `${(chData.word_count || 0).toLocaleString()} words`;
+    } else if (isCancelled) {
+      stateClass = 'pending'; icon = '—'; detail = 'Cancelled';
+    } else if (written + 1 === c.number || (written === 0 && c.number === 1 && book.status === 'writing')) {
+      stateClass = 'active'; icon = '✎'; detail = 'Writing...';
+    }
+    return `<div class="progress-ch ${stateClass}">
+      <div class="progress-ch-icon ${stateClass}">${icon}</div>
+      <div class="progress-ch-info">
+        <div class="progress-ch-title">Ch.${c.number}: ${esc(c.title)}</div>
+        <div class="progress-ch-detail">${detail}</div>
+      </div>
+      <div class="progress-ch-words">${words}</div>
+    </div>`;
+  }).join('');
+
+  let statusIcon = '✍️', statusLabel = 'Writing';
+  if (book.status === 'completed') { statusIcon = '✓'; statusLabel = 'Completed'; }
+  else if (isCancelled) { statusIcon = '⏹'; statusLabel = 'Cancelled'; }
+  else if (book.status === 'failed') { statusIcon = '✗'; statusLabel = 'Failed'; }
+
+  const footerMsg = book.status === 'completed'
+    ? `<div class="writing-done-msg">
+        <span>Your book is ready!</span>
+        <button class="writing-library-btn" onclick="window.location.hash='#/read/${esc(book.agent_id)}'">Read Book</button>
+        <button class="writing-library-btn secondary" onclick="shareBook('${esc(book.title)}','${esc(book.agent_id)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> Share</button>
+        <button class="writing-library-btn secondary" onclick="window.location.hash='#/library'">Library</button>
+      </div>`
+    : isCancelled
+    ? `<div class="writing-done-msg cancelled">
+        <span>Writing stopped — ${written} of ${total} chapters written</span>
+        ${written > 0 ? `<button class="writing-library-btn" onclick="window.location.hash='#/library'">View Partial Book</button>` : ''}
+      </div>`
+    : '';
+
+  const cancelBtn = (book.status === 'writing')
+    ? `<button class="writing-cancel-btn" onclick="_cancelWriteBook('${esc(book.id)}')">Stop Writing</button>`
+    : '';
+
+  return `<div class="writing-progress-card">
+    <div class="writing-progress-header">
+      <span class="writing-progress-icon">${statusIcon}</span>
+      <span class="writing-progress-title">${statusLabel}: ${esc(book.title)}</span>
+      ${cancelBtn}
+    </div>
+    <div class="writing-progress-bar-wrap">
+      <div class="writing-progress-label">
+        <span>${book.status === 'completed' ? 'All chapters complete' : `Chapter ${Math.min(written + 1, total)} of ${total}`}</span>
+        <span>${pct}%</span>
+      </div>
+      <div class="writing-progress-bar"><div class="writing-progress-fill ${isCancelled ? 'cancelled' : ''}" style="width:${pct}%"></div></div>
+    </div>
+    <div class="writing-progress-chapters">${chList}</div>
+    ${footerMsg}
+  </div>`;
+}
+
+function _renderCanvasWritingProgress(book) {
+  const chapters = book.outline?.chapters || [];
+  const total = book.chapters_total || chapters.length;
+  const written = book.chapters_written || 0;
+  const pct = total > 0 ? Math.round((written / total) * 100) : 0;
+  const content = book.content || {};
+  const isCancelled = book.status === 'cancelled';
+
+  let statusLabel = 'Writing...';
+  if (book.status === 'completed') statusLabel = 'Completed';
+  else if (isCancelled) statusLabel = 'Cancelled';
+  else if (book.status === 'failed') statusLabel = 'Failed';
+
+  const chList = chapters.map(c => {
+    const chData = content[String(c.number)];
+    let stateClass = 'pending', icon = '—', detail = 'Waiting...', words = '';
+    if (chData && chData.content) {
+      stateClass = 'done'; icon = '✓'; detail = 'Completed';
+      words = `${(chData.word_count || 0).toLocaleString()} words`;
+    } else if (isCancelled) {
+      stateClass = 'pending'; icon = '—'; detail = 'Cancelled';
+    } else if (written + 1 === c.number || (written === 0 && c.number === 1 && book.status === 'writing')) {
+      stateClass = 'active'; icon = '✎'; detail = 'Writing...';
+    }
+    return `<div class="progress-ch ${stateClass}">
+      <div class="progress-ch-icon ${stateClass}">${icon}</div>
+      <div class="progress-ch-info">
+        <div class="progress-ch-title">Ch.${c.number}: ${esc(c.title)}</div>
+        <div class="progress-ch-detail">${detail}</div>
+      </div>
+      <div class="progress-ch-words">${words}</div>
+    </div>`;
+  }).join('');
+
+  const cancelBtn = (book.status === 'writing')
+    ? `<button class="canvas-cancel-btn" onclick="_cancelWriteBook('${esc(book.id)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop Writing</button>`
+    : '';
+
+  const _shareUrl = `${window.location.origin}/share/${esc(book.agent_id)}`;
+  const _shareTitle = esc(book.title || '');
+  const _twitterText = encodeURIComponent(`${book.title} — written by AI on Feynman`);
+  const _twitterUrl = encodeURIComponent(_shareUrl);
+  const _emailSubject = encodeURIComponent(book.title || 'Check out this book');
+  const _emailBody = encodeURIComponent(`I created "${book.title}" with Feynman AI:\n${_shareUrl}`);
+
+  let footer = '';
+  if (book.status === 'completed') {
+    footer = `<div class="canvas-divider"></div>
+      <div class="canvas-done-label">Your book is ready!</div>
+      <div class="canvas-done-actions">
+        <button class="canvas-action-btn" onclick="chatWithBookByAgent('${esc(book.agent_id)}')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Chat
+        </button>
+        <button class="canvas-action-btn" onclick="window.location.hash='#/read/${esc(book.agent_id)}'">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Read
+        </button>
+        <div class="canvas-share-wrap">
+          <button class="canvas-action-btn" onclick="this.parentElement.classList.toggle('open')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+            Share
+          </button>
+          <div class="canvas-share-popup">
+            <button class="canvas-share-opt" onclick="window.open('https://twitter.com/intent/tweet?text=${_twitterText}&url=${_twitterUrl}','_blank','width=550,height=420');this.closest('.canvas-share-wrap').classList.remove('open')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+              Share on Twitter
+            </button>
+            <button class="canvas-share-opt" onclick="navigator.clipboard.writeText('${_shareUrl}');_showToast('Link copied');this.closest('.canvas-share-wrap').classList.remove('open')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              Copy URL
+            </button>
+            <button class="canvas-share-opt" onclick="window.open('mailto:?subject=${_emailSubject}&body=${_emailBody}');this.closest('.canvas-share-wrap').classList.remove('open')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              Send via Email
+            </button>
+          </div>
+        </div>
+      </div>`;
+  } else if (isCancelled && written > 0) {
+    footer = `<div class="canvas-divider"></div>
+      <div class="canvas-done-label" style="color:var(--text-secondary)">Writing stopped — ${written} of ${total} chapters</div>
+      <div class="canvas-done-actions">
+        <button class="canvas-action-btn" onclick="chatWithBookByAgent('${esc(book.agent_id)}')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Chat
+        </button>
+        <button class="canvas-action-btn" onclick="window.location.hash='#/read/${esc(book.agent_id)}'">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Read
+        </button>
+        <div class="canvas-share-wrap">
+          <button class="canvas-action-btn" onclick="this.parentElement.classList.toggle('open')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+            Share
+          </button>
+          <div class="canvas-share-popup">
+            <button class="canvas-share-opt" onclick="window.open('https://twitter.com/intent/tweet?text=${_twitterText}&url=${_twitterUrl}','_blank','width=550,height=420');this.closest('.canvas-share-wrap').classList.remove('open')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+              Share on Twitter
+            </button>
+            <button class="canvas-share-opt" onclick="navigator.clipboard.writeText('${_shareUrl}');_showToast('Link copied');this.closest('.canvas-share-wrap').classList.remove('open')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              Copy URL
+            </button>
+            <button class="canvas-share-opt" onclick="window.open('mailto:?subject=${_emailSubject}&body=${_emailBody}');this.closest('.canvas-share-wrap').classList.remove('open')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              Send via Email
+            </button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  return `<div class="canvas-book-header">
+    <div class="canvas-book-title">${esc(book.title || book.outline?.title || 'Untitled')}</div>
+    <div class="canvas-book-subtitle">${statusLabel}</div>
+    <div class="canvas-book-meta">
+      <span class="canvas-book-stats">${book.status === 'completed' ? 'All chapters complete' : `Chapter ${Math.min(written + 1, total)} of ${total}`} · ${pct}%</span>
+      ${cancelBtn}
+    </div>
+    <div class="canvas-progress-bar" style="margin-top:12px">
+      <div class="writing-progress-bar"><div class="writing-progress-fill ${isCancelled ? 'cancelled' : ''}" style="width:${pct}%"></div></div>
+    </div>
+  </div>
+  <div class="canvas-divider"></div>
+  <div class="writing-progress-chapters">${chList}</div>
+  ${footer}`;
+}
+
+const _OUTLINE_STAGES = [
+  'Thinking...',
+  'Researching the topic...',
+  'Identifying key themes...',
+  'Structuring chapters...',
+  'Building your book outline...',
+  'Almost there...',
+];
+const _REFINE_STAGES = [
+  'Thinking...',
+  'Reviewing your feedback...',
+  'Updating the outline...',
+];
+
+async function _handleWriteBookMessage(message) {
+  const chatBox = document.getElementById('chat-messages');
+  const sessionId = currentSessionId;
+
+  // Abort any in-flight write-book request and bump generation counter
+  if (_writeBookAbort) { _writeBookAbort.abort(); _writeBookAbort = null; }
+  _writeBookGen++;
+  const gen = _writeBookGen;
+  removeLoading();
+
+  const abort = new AbortController();
+  _writeBookAbort = abort;
+
+  appendMsg(chatBox, 'user', message);
+  _queueSessionMessage(sessionId, 'user', message);
+
+  // Phase 1: No book yet — generate outline
+  if (!_writeBookId) {
+    showLoading(chatBox, _OUTLINE_STAGES);
+    try {
+      const data = await api('/api/ai-books/start', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: message, language: _detectLanguage(message) }),
+        signal: abort.signal,
+      });
+      if (gen !== _writeBookGen) return;
+      _writeBookId = data.id;
+      _writeBookAgentId = data.agent_id;
+      _writeBookOutline = data.outline;
+
+      removeLoading();
+      appendMsg(chatBox, 'assistant', data.ai_message);
+      _queueSessionMessage(sessionId, 'assistant', data.ai_message);
+
+      // Show outline in canvas panel
+      _showBookCanvas(_renderCanvasOutline(data.outline, data.id));
+
+      // Save outline to session meta
+      try {
+        await api(`/api/sessions/${sessionId}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: data.title, meta: { write_book: true, ai_book_id: data.id, agent_id: data.agent_id } }),
+        });
+        const s = chatSessions.find(x => x.id === sessionId);
+        if (s) s.title = data.title;
+        renderChatHistory();
+      } catch (e) { console.warn(e); }
+    } catch (err) {
+      if (err.name === 'AbortError' || gen !== _writeBookGen) return;
+      removeLoading();
+      appendMsg(chatBox, 'assistant', 'Sorry, I couldn\'t generate an outline: ' + err.message);
+    }
+    return;
+  }
+
+  // Phase 2: Outline exists — refine it
+  showLoading(chatBox, _REFINE_STAGES);
+  try {
+    const session = chatSessions.find(s => s.id === sessionId);
+    const history = (session?.messages || [])
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .slice(-6)
+      .map(m => ({ role: m.role, content: m.content }));
+
+    const data = await api(`/api/ai-books/${_writeBookId}/chat`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, history }),
+      signal: abort.signal,
+    });
+    if (gen !== _writeBookGen) return;
+
+    _writeBookOutline = data.outline;
+    removeLoading();
+    appendMsg(chatBox, 'assistant', data.response);
+    _queueSessionMessage(sessionId, 'assistant', data.response);
+
+    // Update outline in canvas panel
+    _showBookCanvas(_renderCanvasOutline(data.outline, _writeBookId));
+  } catch (err) {
+    if (err.name === 'AbortError' || gen !== _writeBookGen) return;
+    removeLoading();
+    appendMsg(chatBox, 'assistant', 'Error updating outline: ' + err.message);
+  }
+}
+
+async function _confirmWriteBook(bookId) {
+  if (!bookId) return;
+  const chatBox = document.getElementById('chat-messages');
+
+  const btn = document.querySelector('#book-canvas .canvas-confirm-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="btn-spinner"></span>Starting...'; }
+
+  try {
+    const data = await api(`/api/ai-books/${bookId}/confirm`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    appendMsg(chatBox, 'assistant', `Great! I'm now writing your book. I'll update you as each chapter is completed. You can leave this chat and come back anytime.`);
+
+    _startWritingPoll(bookId, chatBox);
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>Start Writing'; }
+    appendMsg(chatBox, 'assistant', 'Error starting writing: ' + err.message);
+  }
+}
+window._confirmWriteBook = _confirmWriteBook;
+
+async function _cancelWriteBook(bookId) {
+  if (!bookId || !confirm('Stop writing? Chapters already completed will be kept.')) return;
+  try {
+    await api(`/api/ai-books/${bookId}/cancel`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+  } catch (err) {
+    alert('Failed to cancel: ' + err.message);
+  }
+}
+window._cancelWriteBook = _cancelWriteBook;
+
+function _startWritingPoll(bookId, chatBox) {
+  if (_writeBookPolling) clearInterval(_writeBookPolling);
+
+  async function poll() {
+    try {
+      const book = await api(`/api/ai-books/${bookId}`);
+      _showBookCanvas(_renderCanvasWritingProgress(book));
+
+      if (book.status === 'completed' || book.status === 'failed' || book.status === 'cancelled') {
+        clearInterval(_writeBookPolling);
+        _writeBookPolling = null;
+        if (book.status === 'completed' || book.status === 'cancelled') {
+          await loadAgents();
+          buildBookList();
+          renderChatHistory();
+        }
+      }
+    } catch (e) {
+      console.warn('Poll error:', e);
+    }
+  }
+
+  poll();
+  _writeBookPolling = setInterval(poll, 5000);
+}
+
+function _detectLanguage(text) {
+  const cjk = text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g);
+  if (cjk && cjk.length > text.length * 0.1) return 'zh';
+  const jp = text.match(/[\u3040-\u309f\u30a0-\u30ff]/g);
+  if (jp && jp.length > 3) return 'ja';
+  const kr = text.match(/[\uac00-\ud7af]/g);
+  if (kr && kr.length > 3) return 'ko';
+  return 'en';
+}
+
+function _isWriteBookSession() {
+  if (!currentSessionId) return false;
+  const session = chatSessions.find(s => s.id === currentSessionId);
+  return session?.sessionType === 'write_book' || session?.meta?.write_book;
+}
 
 // ─── Book detail ───
 async function renderBookDetail(bookId) {
@@ -3516,6 +4153,287 @@ function selectBookForChat(bookId) {
   window.location.hash = '#/';
 }
 window.selectBookForChat = selectBookForChat;
+
+async function chatWithBookByAgent(agentId) {
+  let book = allBooks.find(b => b.agentId === agentId);
+  if (!book) {
+    try {
+      const agent = await api('/api/agents/' + agentId);
+      if (agent) {
+        const meta = agent.meta || {};
+        book = {
+          id: agent.id, title: agent.name, author: meta.author || agent.source || '',
+          agentId: agent.id, status: agent.status, category: meta.category || agent.type,
+          isAIGenerated: agent.type === 'ai_book', available: true,
+        };
+      }
+    } catch (_) {}
+  }
+  if (!book) return;
+  saveCurrentSession();
+  currentSessionId = null;
+  selectedBooks.clear();
+  selectedMinds.clear();
+  activeMinds.clear();
+  _mindsInvitedOnce = false;
+  selectedBooks.set(book.id, book);
+  window.location.hash = '#/';
+}
+window.chatWithBookByAgent = chatWithBookByAgent;
+
+// ─── Book Reader (paginated, left-right flip) ───
+
+let _readerData = null;
+let _readerPages = [];
+let _readerPage = 0;
+let _readerCleanup = null;
+
+async function renderReader(agentId) {
+  if (_readerCleanup) { _readerCleanup(); _readerCleanup = null; }
+  const page = document.getElementById('page-read');
+  page.innerHTML = `<div class="reader-loading"><span class="loading-dot">Loading book...</span></div>`;
+
+  try {
+    _readerData = await api(`/api/agents/${agentId}/read`);
+  } catch (err) {
+    page.innerHTML = `<div class="reader-empty"><p>Could not load book: ${esc(err.message)}</p><a href="#/library" class="reader-back-link">&larr; Back to Library</a></div>`;
+    return;
+  }
+
+  const d = _readerData;
+  const isAI = d.type === 'ai_book';
+  const readTime = Math.max(1, Math.round(d.total_words / 230));
+
+  // TOC — minimal, no header
+  let tocHtml = '';
+  if (isAI && d.chapters?.length) {
+    tocHtml = `<nav class="reader-toc">
+      <a class="reader-toc-item reader-toc-cover" data-ch="0">
+        <span class="reader-toc-num"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></span><span class="reader-toc-label">Cover</span>
+      </a>
+      ${d.chapters.map(c => `<a class="reader-toc-item" data-ch="${c.number}">
+        <span class="reader-toc-num">${c.number}</span><span class="reader-toc-label">${esc(c.title)}</span>
+      </a>`).join('')}
+    </nav>`;
+  }
+
+  // Title page as page 0 — clean cover
+  const titlePageHtml = `
+    <div class="reader-cover">
+      <div class="reader-cover-body">
+        <h1 class="reader-cover-title">${esc(d.title)}</h1>
+        ${d.subtitle ? `<p class="reader-cover-subtitle">${esc(d.subtitle)}</p>` : ''}
+        <p class="reader-cover-author">${esc(d.author)}</p>
+        <div class="reader-cover-stats">
+          <span>${d.total_words.toLocaleString()} words</span>
+          <span class="reader-cover-dot"></span>
+          <span>~${readTime} min read</span>
+          ${isAI && d.chapters?.length ? `<span class="reader-cover-dot"></span><span>${d.chapters.length} chapters</span>` : ''}
+        </div>
+      </div>
+      <div class="reader-cover-imprint">
+        <svg class="reader-cover-imprint-logo" width="22" height="22" viewBox="0 0 64 64" fill="none">
+          <line x1="8" y1="58" x2="32" y2="30" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="56" y1="58" x2="32" y2="30" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="32" cy="30" r="3.5" fill="currentColor"/>
+          <path d="M32,30 C26,24 38,18 32,12 C26,6 38,0 32,-4" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="reader-cover-imprint-name">Feynman</span>
+      </div>
+    </div>`;
+
+  // Build flat HTML blocks to paginate — header + body merged per chapter
+  let allBlocks = [];
+  if (isAI && d.chapters?.length) {
+    for (const c of d.chapters) {
+      const header = `<div class="reader-chapter-header"><span class="reader-chapter-num">Chapter ${c.number}</span><h2 class="reader-chapter-title">${esc(c.title)}</h2></div>`;
+      const body = _renderReaderMarkdown(c.content);
+      allBlocks.push({ chNum: c.number, html: header + body });
+    }
+  } else if (d.paragraphs?.length) {
+    allBlocks.push({ chNum: 0, html: d.paragraphs.map(p => `<p>${esc(p)}</p>`).join('') });
+  }
+
+  page.innerHTML = `
+    <div class="reader-topbar">
+      <a href="#/library" class="reader-back-btn" title="Back to Library">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </a>
+      <div class="reader-topbar-title">${esc(d.title)}</div>
+    </div>
+    <div class="reader-layout">
+      <aside class="reader-sidebar">${tocHtml}</aside>
+      <div class="reader-stage">
+        <button class="reader-nav reader-nav-prev" id="reader-prev" title="Previous page">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <main class="reader-content" id="reader-content">
+          <div class="reader-page-inner" id="reader-page-inner"></div>
+          <div class="reader-page-num" id="reader-page-num-bar">
+            <span id="reader-page-num">1</span> / <span id="reader-page-total">1</span>
+          </div>
+        </main>
+        <button class="reader-nav reader-nav-next" id="reader-next" title="Next page">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 6 15 12 9 18"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="reader-progress-bar"><div class="reader-progress-fill" id="reader-progress-fill"></div></div>
+  `;
+
+  // Paginate: measure content into pages that fit the viewport
+  const inner = document.getElementById('reader-page-inner');
+  const contentEl = document.getElementById('reader-content');
+
+  function _elFullHeight(el) {
+    const s = getComputedStyle(el);
+    return el.offsetHeight + parseFloat(s.marginTop) + parseFloat(s.marginBottom);
+  }
+
+  function paginate() {
+    const containerH = inner.clientHeight;
+    if (containerH <= 0) return;
+    _readerPages = [];
+
+    // Page 0: title
+    _readerPages.push({ html: titlePageHtml, chNum: 0 });
+
+    for (const block of allBlocks) {
+      // Measure in-place (same width/padding as real render) for accurate heights
+      inner.innerHTML = block.html;
+      const elems = Array.from(inner.children);
+
+      if (inner.scrollHeight <= containerH) {
+        _readerPages.push({ html: block.html, chNum: block.chNum });
+      } else {
+        let pageHtml = '';
+        let pageH = 0;
+
+        for (const el of elems) {
+          const elH = _elFullHeight(el);
+          if (pageH > 0 && pageH + elH > containerH) {
+            _readerPages.push({ html: pageHtml, chNum: block.chNum });
+            pageHtml = '';
+            pageH = 0;
+          }
+          pageHtml += el.outerHTML;
+          pageH += elH;
+        }
+        if (pageHtml) {
+          _readerPages.push({ html: pageHtml, chNum: block.chNum });
+        }
+      }
+    }
+
+    // End page
+    _readerPages.push({ html: '<div class="reader-end-page"><p>End of book</p></div>', chNum: -1 });
+
+    document.getElementById('reader-page-total').textContent = _readerPages.length;
+    if (_readerPage >= _readerPages.length) _readerPage = _readerPages.length - 1;
+    showReaderPage(_readerPage);
+  }
+
+  function showReaderPage(idx) {
+    const prev = _readerPage;
+    _readerPage = Math.max(0, Math.min(idx, _readerPages.length - 1));
+    const pg = _readerPages[_readerPage];
+    inner.innerHTML = pg.html;
+    inner.scrollTop = 0;
+
+    // Trigger page-flip animation
+    if (prev !== _readerPage) {
+      const dir = _readerPage > prev ? 'right' : 'left';
+      inner.classList.remove('flip-left', 'flip-right');
+      void inner.offsetWidth; // reflow to restart animation
+      inner.classList.add('flip-' + dir);
+    }
+
+    document.getElementById('reader-page-num').textContent = _readerPage + 1;
+    const pct = _readerPages.length > 1 ? Math.round((_readerPage / (_readerPages.length - 1)) * 100) : 0;
+    document.getElementById('reader-progress-fill').style.width = pct + '%';
+
+    document.getElementById('reader-prev').style.visibility = _readerPage === 0 ? 'hidden' : '';
+    document.getElementById('reader-next').style.visibility = _readerPage === _readerPages.length - 1 ? 'hidden' : '';
+
+    // Highlight active TOC item
+    document.querySelectorAll('.reader-toc-item').forEach(a => {
+      const ch = parseInt(a.dataset.ch);
+      a.classList.toggle('active', ch === pg.chNum && pg.chNum >= 0);
+    });
+  }
+
+  // Navigation
+  document.getElementById('reader-prev').addEventListener('click', () => showReaderPage(_readerPage - 1));
+  document.getElementById('reader-next').addEventListener('click', () => showReaderPage(_readerPage + 1));
+
+  function onKey(e) {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); showReaderPage(_readerPage + 1); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); showReaderPage(_readerPage - 1); }
+    if (e.key === 'Home') { e.preventDefault(); showReaderPage(0); }
+    if (e.key === 'End') { e.preventDefault(); showReaderPage(_readerPages.length - 1); }
+  }
+  document.addEventListener('keydown', onKey);
+  _readerCleanup = () => document.removeEventListener('keydown', onKey);
+
+  // TOC click → jump to chapter
+  page.querySelectorAll('.reader-toc-item').forEach(a => {
+    a.addEventListener('click', () => {
+      const ch = parseInt(a.dataset.ch);
+      const idx = _readerPages.findIndex(p => p.chNum === ch);
+      if (idx >= 0) showReaderPage(idx);
+    });
+  });
+
+  // Re-paginate on resize
+  let resizeTimer;
+  const onResize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(paginate, 200); };
+  window.addEventListener('resize', onResize);
+  const origCleanup = _readerCleanup;
+  _readerCleanup = () => { origCleanup(); window.removeEventListener('resize', onResize); };
+
+  paginate();
+}
+
+function _renderReaderMarkdown(text) {
+  if (!text) return '';
+  const MAX_PARA = 500;
+  const out = [];
+  for (let block of text.split(/\n{2,}/)) {
+    block = block.trim();
+    if (!block) continue;
+    if (block.startsWith('### ')) { out.push(`<h4>${esc(block.slice(4))}</h4>`); continue; }
+    if (block.startsWith('## '))  { out.push(`<h3>${esc(block.slice(3))}</h3>`); continue; }
+    if (block.startsWith('# '))   { out.push(`<h2>${esc(block.slice(2))}</h2>`); continue; }
+    // Split long paragraphs at sentence boundaries for better pagination
+    if (block.length > MAX_PARA) {
+      const sentences = block.match(/[^.!?]+[.!?]+[\s]*/g) || [block];
+      let chunk = '';
+      for (const s of sentences) {
+        if (chunk.length + s.length > MAX_PARA && chunk) {
+          let h = esc(chunk.trim());
+          h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+          h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
+          out.push(`<p>${h}</p>`);
+          chunk = '';
+        }
+        chunk += s;
+      }
+      if (chunk.trim()) {
+        let h = esc(chunk.trim());
+        h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        out.push(`<p>${h}</p>`);
+      }
+    } else {
+      let h = esc(block);
+      h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
+      out.push(`<p>${h}</p>`);
+    }
+  }
+  return out.join('');
+}
+window.renderReader = renderReader;
 
 // ─── Textarea auto-resize ───
 function autoResize(textarea) {
@@ -5461,6 +6379,9 @@ function bindComposerControls() {
       if (!pop.classList.contains('hidden') && !pop.contains(e.target) && !e.target.closest('.composer-icon-btn')) {
         pop.classList.add('hidden');
       }
+    });
+    document.querySelectorAll('.canvas-share-wrap.open').forEach(w => {
+      if (!w.contains(e.target)) w.classList.remove('open');
     });
   });
 
