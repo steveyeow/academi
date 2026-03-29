@@ -2455,10 +2455,46 @@ let _mindsInvitedOnce = false;
 let _mindsInviteGen = 0;
 const _sessionSaveChains = new Map();
 
+function showMindJoinPrompt(chatBox, mindNames, inviteGen) {
+  return new Promise((resolve) => {
+    if (_mindsInviteGen !== inviteGen) {
+      resolve(false);
+      return;
+    }
+    const wrap = document.createElement('div');
+    wrap.className = 'chat-system-notice';
+    const names = mindNames.length === 1
+      ? esc(mindNames[0])
+      : mindNames.slice(0, -1).map(esc).join(', ') + ' and ' + esc(mindNames[mindNames.length - 1]);
+    wrap.innerHTML = `<div class="mind-consent-inner">
+      <span class="mind-consent-text">${names} wants to join</span>
+      <span class="mind-consent-actions">
+        <button type="button" class="mind-consent-btn mind-consent-allow">Allow</button>
+        <button type="button" class="mind-consent-btn mind-consent-decline">Not now</button>
+      </span>
+    </div>`;
+    const finish = (ok) => {
+      wrap.remove();
+      resolve(ok);
+    };
+    wrap.querySelector('.mind-consent-allow').addEventListener('click', () => {
+      if (_mindsInviteGen !== inviteGen) {
+        finish(false);
+        return;
+      }
+      finish(true);
+    });
+    wrap.querySelector('.mind-consent-decline').addEventListener('click', () => finish(false));
+    chatBox.appendChild(wrap);
+    chatBox.scrollTop = chatBox.scrollHeight;
+  });
+}
+
 async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targetMindNames) {
   const sessionId = currentSessionId;
   const renderGenAtStart = _chatRenderGen;
   const inviteGen = ++_mindsInviteGen;
+  const autoAddedMindIds = [];
 
   try {
     const mindIds = [...activeMinds.keys()];
@@ -2513,6 +2549,7 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
               if (!activeMinds.has(mind.id)) {
                 activeMinds.set(mind.id, { id: mind.id, name: mind.name });
                 newJoinedNames.push(mind.name);
+                autoAddedMindIds.push(mind.id);
               }
             }
           } catch (genErr) { console.warn('[minds] generate failed for', s.name, genErr); }
@@ -2539,6 +2576,7 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
         if (!activeMinds.has(m.id)) {
           activeMinds.set(m.id, { id: m.id, name: m.name });
           newJoinedNames.push(m.name);
+          autoAddedMindIds.push(m.id);
         }
       }
       console.info('[minds] Used fallback seed minds:', newJoinedNames.join(', '));
@@ -2550,6 +2588,25 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
       console.warn('[minds] No minds available at all (no seed minds either). skipSuggest=', skipSuggest, 'hasMentions=', hasMentions);
       return;
     }
+    if (_mindsInviteGen !== inviteGen) return;
+
+    if (!hasMentions && autoAddedMindIds.length > 0) {
+      const consentNames = autoAddedMindIds.map((id) => activeMinds.get(id)?.name).filter(Boolean);
+      const allowed = await showMindJoinPrompt(chatBox, consentNames, inviteGen);
+      if (_mindsInviteGen !== inviteGen) return;
+      if (!allowed) {
+        for (const id of autoAddedMindIds) activeMinds.delete(id);
+        mindIds.length = 0;
+        mindIds.push(...activeMinds.keys());
+        for (const [id] of selectedMinds) {
+          if (!mindIds.includes(id)) mindIds.push(id);
+        }
+        loadMinds();
+        _updateComposerMentionHint();
+        if (!mindIds.length) return;
+      }
+    }
+
     if (_mindsInviteGen !== inviteGen) return;
 
     const history = [];

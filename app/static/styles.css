@@ -1973,6 +1973,53 @@ body {
   font-style: italic;
 }
 
+/* Ask before auto-suggested minds join */
+.mind-consent-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-sidebar);
+  padding: 6px 10px 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.mind-consent-text {
+  margin: 0;
+  line-height: 1.4;
+}
+.mind-consent-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+.mind-consent-btn {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.mind-consent-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.mind-consent-allow {
+  background: var(--btn-solid-bg);
+  color: var(--btn-solid-color);
+  border-color: transparent;
+}
+.mind-consent-allow:hover {
+  opacity: 0.85;
+  color: var(--btn-solid-color);
+}
+
 /* Legacy perspectives (deprecated) */
 .perspectives-actions {
   display: flex;
