@@ -711,21 +711,7 @@ function renderLandingPage() {
         </div>
       </nav>
 
-      <section class="lp-fullscreen">
-        <div class="lp-bg-canvas" id="lp-minds-canvas-wrap"></div>
-
-        <div class="lp-minds-toolbar">
-          <input type="text" id="lp-minds-search" placeholder="Search minds..." autocomplete="off" readonly />
-          <button class="lp-minds-toolbar-btn" disabled>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="4" cy="6" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="18" r="2"/><line x1="9.5" y1="10" x2="5.5" y2="7.5"/><line x1="14.5" y1="10" x2="18.5" y2="7.5"/><line x1="9.5" y1="14" x2="5.5" y2="16.5"/><line x1="14.5" y1="14" x2="18.5" y2="16.5"/></svg>
-            Expand Network
-          </button>
-          <button class="lp-minds-toolbar-btn" disabled>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            Upload a Mind
-          </button>
-        </div>
-
+      <section class="lp-fullscreen lp-hero-section">
         <div class="lp-fg-center">
           <div class="lp-hero-left">
             <h1 class="lp-hero-headline">Chat with books.<br>Great minds join in.</h1>
@@ -801,6 +787,86 @@ function renderLandingPage() {
             </div>
           </div>
         </div>
+        <div class="lp-scroll-hint"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
+      </section>
+
+      <section class="lp-section lp-minds-section">
+        <div class="lp-minds-section-header">
+          <h2 class="lp-section-title">The Minds Network</h2>
+          <p class="lp-section-desc">A continuously evolving network of great minds — from ancient philosophers to modern visionaries. Search for thinkers, discover new connections, and expand the network.</p>
+        </div>
+        <div class="lp-minds-canvas-area">
+          <div class="lp-minds-toolbar">
+            <input type="text" id="lp-minds-search" placeholder="Search minds..." autocomplete="off" readonly />
+            <button class="lp-minds-toolbar-btn" disabled>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="4" cy="6" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="18" r="2"/><line x1="9.5" y1="10" x2="5.5" y2="7.5"/><line x1="14.5" y1="10" x2="18.5" y2="7.5"/><line x1="9.5" y1="14" x2="5.5" y2="16.5"/><line x1="14.5" y1="14" x2="18.5" y2="16.5"/></svg>
+              Expand Network
+            </button>
+            <button class="lp-minds-toolbar-btn" disabled>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Upload a Mind
+            </button>
+          </div>
+          <div class="lp-bg-canvas" id="lp-minds-canvas-wrap"></div>
+        </div>
+      </section>
+
+      <section class="lp-section lp-library-section">
+        <div class="lp-section-split">
+          <div class="lp-section-text">
+            <span class="lp-section-label">LIBRARY</span>
+            <h2 class="lp-section-title">Every book, one conversation away</h2>
+            <p class="lp-section-desc">Upload any book and turn it into an interactive conversation. Search for titles — if it's not in your library yet, we'll find and index it in real time. Great minds join the discussion as you explore.</p>
+            <button class="lp-section-cta" id="lp-library-cta">Explore Library<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+          </div>
+          <div class="lp-section-preview">
+            <div class="lp-mock-library">
+              <div class="lp-mock-toolbar"><span class="lp-mock-page-title">Library</span><div class="lp-mock-search"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Search by title or author...</div></div>
+              <div class="lp-mock-tags"><span class="lp-mock-tag active">All</span><span class="lp-mock-tag">Philosophy</span><span class="lp-mock-tag">Science</span><span class="lp-mock-tag">Business</span><span class="lp-mock-tag">History</span></div>
+              <div class="lp-mock-grid">
+                <div class="lp-mock-book"><div class="lp-mock-cover" style="background:linear-gradient(135deg,#264653,#2a9d8f)"><span>TFS</span></div><div class="lp-mock-meta"><div class="lp-mock-book-title">Thinking, Fast and Slow</div><div class="lp-mock-author">Daniel Kahneman</div></div></div>
+                <div class="lp-mock-book"><div class="lp-mock-cover" style="background:linear-gradient(135deg,#9f1239,#fb7185)"><span>AW</span></div><div class="lp-mock-meta"><div class="lp-mock-book-title">The Art of War</div><div class="lp-mock-author">Sun Tzu</div></div></div>
+                <div class="lp-mock-book"><div class="lp-mock-cover" style="background:linear-gradient(135deg,#334155,#6366f1)"><span>S</span></div><div class="lp-mock-meta"><div class="lp-mock-book-title">Sapiens</div><div class="lp-mock-author">Yuval Noah Harari</div></div></div>
+                <div class="lp-mock-book"><div class="lp-mock-cover" style="background:linear-gradient(135deg,#059669,#34d399)"><span>ZO</span></div><div class="lp-mock-meta"><div class="lp-mock-book-title">Zero to One</div><div class="lp-mock-author">Peter Thiel</div></div></div>
+                <div class="lp-mock-book"><div class="lp-mock-cover" style="background:linear-gradient(135deg,#ea580c,#facc15)"><span>P</span></div><div class="lp-mock-meta"><div class="lp-mock-book-title">Principles</div><div class="lp-mock-author">Ray Dalio</div></div></div>
+                <div class="lp-mock-book"><div class="lp-mock-cover" style="background:linear-gradient(135deg,#6d28d9,#ec4899)"><span>✦</span></div><div class="lp-mock-meta"><div class="lp-mock-book-title">The Future of AI</div><div class="lp-mock-author">AI-Generated</div><span class="lp-mock-ai-badge">✨ AI Created</span></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="lp-section lp-write-section">
+        <div class="lp-section-split">
+          <div class="lp-section-text">
+            <span class="lp-section-label">AI BOOK WRITER</span>
+            <h2 class="lp-section-title">Write your own book with AI</h2>
+            <p class="lp-section-desc">Describe any topic you want to explore deeply. AI generates a full book — chapters, outline, and research. Then read it, chat with it, and share it with the community.</p>
+            <button class="lp-section-cta" id="lp-write-cta">Start Writing<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+          </div>
+          <div class="lp-section-preview">
+            <div class="lp-mock-writer">
+              <div class="lp-mock-toolbar"><span class="lp-mock-page-title lp-mock-gradient-title">✨ AI Book Writer</span></div>
+              <div class="lp-mock-writer-body">
+                <div class="lp-mock-topic"><div class="lp-mock-topic-label">TOPIC</div><div class="lp-mock-topic-text">A comprehensive guide to building mental models for better decision-making, drawing from multiple disciplines</div></div>
+                <div class="lp-mock-outline">
+                  <div class="lp-mock-chapter done"><span class="lp-mock-ch-num">1</span><span class="lp-mock-ch-title">The Architecture of Thought</span><span class="lp-mock-ch-status">✓</span></div>
+                  <div class="lp-mock-chapter done"><span class="lp-mock-ch-num">2</span><span class="lp-mock-ch-title">First Principles Reasoning</span><span class="lp-mock-ch-status">✓</span></div>
+                  <div class="lp-mock-chapter writing"><span class="lp-mock-ch-num">3</span><span class="lp-mock-ch-title">Probabilistic Thinking</span><span class="lp-mock-ch-status writing">Writing...</span></div>
+                  <div class="lp-mock-chapter"><span class="lp-mock-ch-num">4</span><span class="lp-mock-ch-title">Inversion and Contraposition</span></div>
+                  <div class="lp-mock-chapter"><span class="lp-mock-ch-num">5</span><span class="lp-mock-ch-title">Circle of Competence</span></div>
+                </div>
+                <div class="lp-mock-progress"><div class="lp-mock-progress-bar"><div class="lp-mock-progress-fill"></div></div><span class="lp-mock-progress-text">Writing Chapter 3 of 8...</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="lp-footer-section">
+        <p class="lp-footer-quote">"What I cannot create, I do not understand."</p>
+        <p class="lp-footer-attr">— Richard Feynman</p>
+        <button class="lp-hero-cta" id="lp-footer-cta">${window.FEYNMAN_PRO ? 'Get Started Free' : 'Start Exploring'}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
       </section>
     </div>`;
 
@@ -814,6 +880,9 @@ function renderLandingPage() {
   };
   document.getElementById('lp-get-started').addEventListener('click', _lpCtaHandler);
   document.getElementById('lp-hero-cta').addEventListener('click', _lpCtaHandler);
+  document.getElementById('lp-library-cta').addEventListener('click', _lpCtaHandler);
+  document.getElementById('lp-write-cta').addEventListener('click', _lpCtaHandler);
+  document.getElementById('lp-footer-cta').addEventListener('click', _lpCtaHandler);
 
   document.getElementById('lp-theme-toggle').addEventListener('click', () => {
     const isCurrentlyDark = _isDarkMode();
@@ -1020,27 +1089,16 @@ function _renderLandingMindsGraph() {
     }
   });
 
-  addNode.x = W / 2 + 160;
-  addNode.y = H / 2 - 100;
+  addNode.x = W * 0.75;
+  addNode.y = H * 0.3;
 
   window._lpGraphNodes = nodes;
   window._lpGraphLinks = links;
   window._lpGraphParticles = particles;
 
-  const heroW = 300, heroH = 200;
-  const heroCx = W * 0.06 + heroW / 2, heroCy = H / 2;
-  const heroHalfW = heroW / 2 + 30, heroHalfH = heroH / 2 + 10;
+  window._lpClearZone = null;
 
-  const cardW = Math.min(620, W * 0.55);
-  const cardH = Math.min(520, H - 120);
-  const cardCx = W - W * 0.04 - cardW / 2, cardCy = H / 2;
-  const cardHalfW = cardW / 2 + 50, cardHalfH = cardH / 2 + 40;
-
-  window._lpClearZone = { cx: cardCx, cy: cardCy, hw: cardHalfW, hh: cardHalfH };
-
-  const clearZones = [
-    { cx: heroCx, cy: heroCy, hw: heroHalfW, hh: heroHalfH },
-  ];
+  const clearZones = [];
 
   function makeAvoidForce() {
     let ns;
@@ -1069,7 +1127,7 @@ function _renderLandingMindsGraph() {
     return force;
   }
 
-  const graphCx = W * 0.55;
+  const graphCx = W / 2;
   const sim = d3.forceSimulation(nodes)
     .force('link', d3.forceLink(links).id(d => d.id).distance(d => Math.max(80, 280 - d.strength * 70)).strength(d => 0.08 + d.strength * 0.15))
     .force('charge', d3.forceManyBody().strength(-600).distanceMax(800))
@@ -3115,10 +3173,6 @@ async function startWriteBook() {
   } catch (e) { console.warn('Failed to update session type:', e); }
 
   const greeting = "I'd love to help you create a book. Tell me what you're interested in — a person, an idea, a skill, or even a book that doesn't exist yet but you wish it did.\n\nYou can be as specific or broad as you like. For example:\n- *\"A biography of Elon Musk focused on his engineering decisions\"*\n- *\"A beginner's guide to quantum computing in plain language\"*\n- *\"The history of coffee and how it shaped civilization\"*";
-  if (session) {
-    if (!session.messages) session.messages = [];
-    session.messages.push({ role: 'assistant', content: greeting });
-  }
   _queueSessionMessage(currentSessionId, 'assistant', greeting);
   window.location.hash = '#/chat';
 }
@@ -4188,6 +4242,7 @@ let _readerCleanup = null;
 
 async function renderReader(agentId) {
   if (_readerCleanup) { _readerCleanup(); _readerCleanup = null; }
+  _readerPage = 0;
   const page = document.getElementById('page-read');
   page.innerHTML = `<div class="reader-loading"><span class="loading-dot">Loading book...</span></div>`;
 
@@ -4216,28 +4271,28 @@ async function renderReader(agentId) {
   }
 
   // Title page as page 0 — clean cover
-  const titlePageHtml = `
-    <div class="reader-cover">
-      <div class="reader-cover-body">
-        <h1 class="reader-cover-title">${esc(d.title)}</h1>
-        ${d.subtitle ? `<p class="reader-cover-subtitle">${esc(d.subtitle)}</p>` : ''}
-        <p class="reader-cover-author">${esc(d.author)}</p>
-        <div class="reader-cover-stats">
-          <span>${d.total_words.toLocaleString()} words</span>
-          <span class="reader-cover-dot"></span>
-          <span>~${readTime} min read</span>
-          ${isAI && d.chapters?.length ? `<span class="reader-cover-dot"></span><span>${d.chapters.length} chapters</span>` : ''}
-        </div>
-      </div>
+  const imprintHtml = isAI ? `
       <div class="reader-cover-imprint">
-        <svg class="reader-cover-imprint-logo" width="22" height="22" viewBox="0 0 64 64" fill="none">
+        <svg width="18" height="18" viewBox="0 0 64 64" fill="none">
           <line x1="8" y1="58" x2="32" y2="30" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
           <line x1="56" y1="58" x2="32" y2="30" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
           <circle cx="32" cy="30" r="3.5" fill="currentColor"/>
           <path d="M32,30 C26,24 38,18 32,12 C26,6 38,0 32,-4" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-        <span class="reader-cover-imprint-name">Feynman</span>
+        <span>Feynman</span>
+      </div>` : '';
+  const titlePageHtml = `
+    <div class="reader-cover">
+      <h1 class="reader-cover-title">${esc(d.title)}</h1>
+      ${d.subtitle ? `<p class="reader-cover-subtitle">${esc(d.subtitle)}</p>` : ''}
+      <p class="reader-cover-author">${esc(d.author)}</p>
+      <div class="reader-cover-stats">
+        <span>${d.total_words.toLocaleString()} words</span>
+        <span class="reader-cover-dot"></span>
+        <span>~${readTime} min read</span>
+        ${isAI && d.chapters?.length ? `<span class="reader-cover-dot"></span><span>${d.chapters.length} chapters</span>` : ''}
       </div>
+      ${imprintHtml}
     </div>`;
 
   // Build flat HTML blocks to paginate — header + body merged per chapter
