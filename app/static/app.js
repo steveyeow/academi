@@ -1518,8 +1518,12 @@ function navigate() {
       renderSelectedChips();
       break;
     case 'chat': onChatPageShow(); break;
-    case 'chats': renderChatsPage(); break;
-    case 'library': renderLibrary(); break;
+    case 'chats':
+      if (window.FEYNMAN_PRO && !currentUser) { window.location.hash = '#/login'; return; }
+      renderChatsPage(); break;
+    case 'library':
+      if (window.FEYNMAN_PRO && !currentUser) { window.location.hash = '#/login'; return; }
+      renderLibrary(); break;
     case 'minds': renderMindsPage(); break;
     case 'login': renderLoginPage(); break;
     case 'subscription': renderSubscriptionPage(); break;
@@ -1533,10 +1537,12 @@ function navigate() {
       renderMindDetail(route.id);
       break;
     case 'book':
+      if (window.FEYNMAN_PRO && !currentUser) { window.location.hash = '#/login'; return; }
       currentBookId = route.id;
       renderBookDetail(route.id);
       break;
     case 'read':
+      if (window.FEYNMAN_PRO && !currentUser) { window.location.hash = '#/login'; return; }
       renderReader(route.id);
       break;
   }

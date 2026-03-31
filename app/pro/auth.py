@@ -40,6 +40,15 @@ PUBLIC_PATHS = {
 }
 PUBLIC_PREFIXES = ("/static/", "/share/")
 
+# GET requests to these paths require authentication (user-specific data)
+PRIVATE_GET_PREFIXES = (
+    "/api/sessions",
+    "/api/ai-books",
+    "/api/users/",
+    "/api/pro/subscription",
+)
+PRIVATE_GET_SUFFIXES = ("/read", "/messages", "/questions")
+
 
 def _get_jwks_keys() -> list:
     """Fetch and cache JWKS keys from Supabase."""
@@ -100,8 +109,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
         auth_header = request.headers.get("authorization", "")
         has_token = auth_header.startswith("Bearer ")
 
+        is_private_get = is_get_api and (
+            any(path.startswith(p) for p in PRIVATE_GET_PREFIXES)
+            or any(path.endswith(s) for s in PRIVATE_GET_SUFFIXES)
+        )
+
         if not has_token:
-            if is_get_api:
+            if is_get_api and not is_private_get:
                 return await call_next(request)
             return JSONResponse(
                 {"detail": "Authentication required", "code": "auth_required"},
@@ -112,12 +126,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
         try:
             payload = _decode_token(token)
         except jwt.ExpiredSignatureError:
-            if is_get_api:
+            if is_get_api and not is_private_get:
                 return await call_next(request)
             return JSONResponse({"detail": "Token expired", "code": "token_expired"}, status_code=401)
         except jwt.InvalidTokenError as e:
             log.warning("JWT validation failed: %s", e)
-            if is_get_api:
+            if is_get_api and not is_private_get:
                 return await call_next(request)
             return JSONResponse({"detail": "Invalid token", "code": "invalid_token"}, status_code=401)
 
@@ -125,7 +139,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         email = payload.get("email", "")
 
         if not user_id:
-            if is_get_api:
+            if is_get_api and not is_private_get:
                 return await call_next(request)
             return JSONResponse({"detail": "Invalid token claims"}, status_code=401)
 
