@@ -81,6 +81,8 @@ from .core.ai_writer import generate_outline, refine_outline, write_full_book
 
 log = logging.getLogger(__name__)
 
+_STALE_WRITING_SECONDS = 5 * 60
+
 app = FastAPI(title=config.APP_TITLE)
 
 
@@ -1051,11 +1053,15 @@ def api_list_agents() -> list[dict[str, Any]]:
             try:
                 ai_book = get_ai_book_by_agent(agent["id"])
                 if ai_book and ai_book.get("updated_at"):
-                    from datetime import datetime, timezone
-                    updated = datetime.fromisoformat(ai_book["updated_at"].replace("Z", "+00:00"))
+                    from datetime import datetime as _dt, timezone as _tz
+                    raw = ai_book["updated_at"]
+                    if isinstance(raw, str):
+                        updated = _dt.fromisoformat(raw.replace("Z", "+00:00"))
+                    else:
+                        updated = raw if hasattr(raw, 'timestamp') else _dt.now(_tz.utc)
                     if updated.tzinfo is None:
-                        updated = updated.replace(tzinfo=timezone.utc)
-                    age = (datetime.now(timezone.utc) - updated).total_seconds()
+                        updated = updated.replace(tzinfo=_tz.utc)
+                    age = (_dt.now(_tz.utc) - updated).total_seconds()
                     if age > _STALE_WRITING_SECONDS:
                         log.warning("Agent %s / book %s stuck in writing for %ds — marking failed",
                                     agent["id"], ai_book["id"], int(age))
@@ -1063,8 +1069,11 @@ def api_list_agents() -> list[dict[str, Any]]:
                         new_status = "error" if ai_book["chapters_written"] == 0 else "ready"
                         update_agent_status(agent["id"], new_status)
                         agent["status"] = new_status
-            except Exception:
-                pass
+                    else:
+                        log.debug("Agent %s book %s writing age=%ds (threshold=%ds)",
+                                  agent["id"], ai_book["id"], int(age), _STALE_WRITING_SECONDS)
+            except Exception as exc:
+                log.error("Stale writing check failed for agent %s: %s", agent["id"], exc)
     return result
 
 
@@ -1760,8 +1769,6 @@ def api_ai_book_retry(book_id: str, request: Request, background_tasks: Backgrou
 
     return {"status": "writing", "chapters_total": book["chapters_total"], "chapters_written": book.get("chapters_written", 0)}
 
-
-_STALE_WRITING_SECONDS = 5 * 60
 
 @app.get("/api/ai-books/{book_id}")
 def api_ai_book_get(book_id: str, request: Request) -> dict[str, Any]:
