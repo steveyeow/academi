@@ -11,6 +11,9 @@ from . import config
 
 log = logging.getLogger(__name__)
 
+_CHAT_TIMEOUT = 30
+_EMBED_TIMEOUT = 60
+
 
 class ProviderError(RuntimeError):
     pass
@@ -67,9 +70,9 @@ class OpenAICompatibleProvider(BaseProvider):
             "Content-Type": "application/json",
         }
 
-    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _post(self, path: str, payload: dict[str, Any], timeout: int | None = None) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
-        with httpx.Client(timeout=60) as client:
+        with httpx.Client(timeout=timeout or _CHAT_TIMEOUT) as client:
             resp = client.post(url, headers=self._headers(), json=payload)
         if resp.status_code >= 400:
             raise ProviderError(f"{self.name} error {resp.status_code}: {resp.text}")
@@ -82,7 +85,7 @@ class OpenAICompatibleProvider(BaseProvider):
             "model": self.embed_model,
             "input": texts,
         }
-        data = self._post("/embeddings", payload)
+        data = self._post("/embeddings", payload, timeout=_EMBED_TIMEOUT)
         return [item["embedding"] for item in data.get("data", [])]
 
     def chat(self, system: str, user: str, history: list[dict[str, str]] | None = None, use_grounding: bool = False) -> ChatResult:
@@ -131,9 +134,9 @@ class GeminiProvider(BaseProvider):
             "Content-Type": "application/json",
         }
 
-    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _post(self, path: str, payload: dict[str, Any], timeout: int | None = None) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
-        with httpx.Client(timeout=60) as client:
+        with httpx.Client(timeout=timeout or _CHAT_TIMEOUT) as client:
             resp = client.post(url, headers=self._headers(), json=payload)
         if resp.status_code >= 400:
             raise ProviderError(f"Gemini error {resp.status_code}: {resp.text}")
@@ -171,7 +174,7 @@ class GeminiProvider(BaseProvider):
             ]
             for attempt in range(_MAX_RETRIES + 1):
                 try:
-                    data = self._post(path, {"requests": requests})
+                    data = self._post(path, {"requests": requests}, timeout=_EMBED_TIMEOUT)
                     break
                 except ProviderError as exc:
                     if "429" in str(exc) and attempt < _MAX_RETRIES:
@@ -304,7 +307,7 @@ class AnthropicProvider(BaseProvider):
             "anthropic-version": "2023-06-01",
             "Content-Type": "application/json",
         }
-        with httpx.Client(timeout=60) as client:
+        with httpx.Client(timeout=_CHAT_TIMEOUT) as client:
             resp = client.post(f"{self.base_url}/v1/messages", headers=headers, json=payload)
         if resp.status_code >= 400:
             raise ProviderError(f"anthropic error {resp.status_code}: {resp.text}")
@@ -382,10 +385,19 @@ def chat_with_fallback(
     user: str,
     history: list[dict[str, str]] | None = None,
     use_grounding: bool = False,
+    max_total_seconds: float = 50,
 ) -> tuple[ChatResult, BaseProvider]:
-    """Try each provider in order until one succeeds. Returns (result, provider)."""
+    """Try each provider in order until one succeeds. Returns (result, provider).
+
+    *max_total_seconds* caps total wall-clock time across all attempts so the
+    caller (e.g. a serverless function) doesn't get killed by the platform.
+    """
     errors: list[str] = []
+    deadline = time.monotonic() + max_total_seconds
     for name in config.PROVIDER_ORDER:
+        if time.monotonic() >= deadline:
+            errors.append("deadline exceeded")
+            break
         provider = get_provider(name)
         if not provider.has_key():
             continue
@@ -398,6 +410,7 @@ def chat_with_fallback(
             )
             return result, provider
         except Exception as exc:
+            log.warning("Provider %s failed: %s", name, exc)
             errors.append(f"{name}: {exc}")
             continue
     raise ProviderError("All providers failed: " + "; ".join(errors))

@@ -1581,17 +1581,21 @@ def api_ai_book_start(payload: AIBookStartRequest, request: Request) -> dict[str
         "creator_user_id": user_id,
         "description": outline.get("subtitle", ""),
     }
-    agent_id = create_agent(
-        name=title, agent_type="ai_book", source="ai_writer",
-        meta=meta, user_id=user_id,
-    )
-    # Agent starts as "indexing" by default; override to "outlining"
-    update_agent_status(agent_id, "outlining", meta)
 
-    book_id = create_ai_book(
-        agent_id=agent_id, user_id=user_id, title=title,
-        description=payload.description, outline=outline, preferences=prefs,
-    )
+    try:
+        agent_id = create_agent(
+            name=title, agent_type="ai_book", source="ai_writer",
+            meta=meta, user_id=user_id,
+        )
+        update_agent_status(agent_id, "outlining", meta)
+
+        book_id = create_ai_book(
+            agent_id=agent_id, user_id=user_id, title=title,
+            description=payload.description, outline=outline, preferences=prefs,
+        )
+    except Exception as exc:
+        log.error("Failed to persist AI book: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to save book: {exc}")
 
     _track_usage(request, "ai_book", usage.get("total_tokens", 0))
     return {
