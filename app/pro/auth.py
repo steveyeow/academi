@@ -144,7 +144,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
             return JSONResponse({"detail": "Invalid token claims"}, status_code=401)
 
-        user = get_or_create_user(user_id, email)
+        try:
+            user = get_or_create_user(user_id, email)
+        except Exception as e:
+            log.error("get_or_create_user failed for %s: %s", user_id, e)
+            user = None
 
         request.state.user_id = user_id
         request.state.email = email

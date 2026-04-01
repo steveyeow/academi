@@ -1049,7 +1049,16 @@ def debug_ai_book_test() -> dict[str, Any]:
     except Exception as e:
         result["steps"]["ai_books_table"] = f"FAIL: {e}"
 
-    # Step 5: Full outline generation (the actual failing path)
+    # Step 5: Check users table
+    try:
+        from .core.db import get_conn, _fetchone, _q
+        with get_conn() as conn:
+            row = _fetchone(conn, _q("SELECT COUNT(*) as cnt FROM users"), ())
+            result["steps"]["users_table"] = f"ok ({row['cnt']} users)"
+    except Exception as e:
+        result["steps"]["users_table"] = f"FAIL: {type(e).__name__}: {e}"
+
+    # Step 6: Full outline generation (the actual failing path)
     try:
         outline, ai_msg, usage = generate_outline(
             "A short guide to baking bread", {}, "en",
