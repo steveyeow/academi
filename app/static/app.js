@@ -3453,27 +3453,18 @@ async function _handleWriteBookMessage(message) {
   _queueSessionMessage(sessionId, 'user', message);
 
   // Phase 1: No book yet — generate outline
+  // NOTE: no abort signal — outline generation takes ~20s and must survive
+  // the user navigating to another chat and back.
   if (!_writeBookId) {
     showLoading(chatBox, _OUTLINE_STAGES);
     try {
       const data = await api('/api/ai-books/start', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description: message, language: _detectLanguage(message) }),
-        signal: abort.signal,
       });
-      if (gen !== _writeBookGen) return;
-      _writeBookId = data.id;
-      _writeBookAgentId = data.agent_id;
-      _writeBookOutline = data.outline;
 
-      removeLoading();
-      appendMsg(chatBox, 'assistant', data.ai_message);
+      // Always persist session meta so _restoreWriteBookState can recover
       _queueSessionMessage(sessionId, 'assistant', data.ai_message);
-
-      // Show outline in canvas panel
-      _showBookCanvas(_renderCanvasOutline(data.outline, data.id));
-
-      // Save outline to session meta
       try {
         await api(`/api/sessions/${sessionId}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -3481,8 +3472,21 @@ async function _handleWriteBookMessage(message) {
         });
         const s = chatSessions.find(x => x.id === sessionId);
         if (s) s.title = data.title;
-        renderChatHistory();
       } catch (e) { console.warn(e); }
+
+      // Only update in-memory state & UI if user is still on this session
+      if (gen !== _writeBookGen) {
+        renderChatHistory();
+        return;
+      }
+      _writeBookId = data.id;
+      _writeBookAgentId = data.agent_id;
+      _writeBookOutline = data.outline;
+
+      removeLoading();
+      appendMsg(chatBox, 'assistant', data.ai_message);
+      _showBookCanvas(_renderCanvasOutline(data.outline, data.id));
+      renderChatHistory();
     } catch (err) {
       if (err.name === 'AbortError' || gen !== _writeBookGen) return;
       removeLoading();
