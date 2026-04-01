@@ -1292,7 +1292,7 @@ def count_ai_books_this_month(user_id: str) -> int:
     """Count AI books created by a user in the current calendar month."""
     if _USE_PG:
         sql = ("SELECT COUNT(*) as cnt FROM ai_books "
-               "WHERE user_id = %s AND created_at >= date_trunc('month', CURRENT_TIMESTAMP)")
+               "WHERE user_id = %s AND created_at::timestamptz >= date_trunc('month', CURRENT_TIMESTAMP)")
     else:
         sql = ("SELECT COUNT(*) as cnt FROM ai_books "
                "WHERE user_id = ? AND created_at >= date('now', 'start of month')")
