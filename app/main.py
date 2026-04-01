@@ -1702,6 +1702,24 @@ def api_ai_book_cancel(book_id: str, request: Request) -> dict[str, Any]:
     return {"status": "cancelled", "chapters_written": book.get("chapters_written", 0)}
 
 
+@app.post("/api/ai-books/{book_id}/retry")
+def api_ai_book_retry(book_id: str, request: Request, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    """Retry writing a failed book — resumes from the first unwritten chapter."""
+    user_id = _get_user_id(request) or "anon"
+
+    book = get_ai_book(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="AI book not found")
+    if book["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if book["status"] != "failed":
+        raise HTTPException(status_code=409, detail=f"Book is in '{book['status']}' state, retry only works for failed books")
+
+    background_tasks.add_task(write_full_book, book_id)
+
+    return {"status": "writing", "chapters_total": book["chapters_total"], "chapters_written": book.get("chapters_written", 0)}
+
+
 @app.get("/api/ai-books/{book_id}")
 def api_ai_book_get(book_id: str, request: Request) -> dict[str, Any]:
     """Get AI book details including writing progress."""

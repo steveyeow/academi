@@ -3371,6 +3371,15 @@ function _renderCanvasWritingProgress(book) {
           </div>
         </div>
       </div>`;
+  } else if (book.status === 'failed') {
+    footer = `<div class="canvas-divider"></div>
+      <div class="canvas-done-label" style="color:var(--error-color,#e55)">Writing failed at chapter ${written + 1} of ${total}</div>
+      <div class="canvas-done-actions">
+        <button class="canvas-action-btn" style="background:var(--accent-color,#5b8a72);color:#fff" onclick="_retryWriteBook('${esc(book.id)}')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Retry
+        </button>
+      </div>`;
   } else if (isCancelled && written > 0) {
     footer = `<div class="canvas-divider"></div>
       <div class="canvas-done-label" style="color:var(--text-secondary)">Writing stopped — ${written} of ${total} chapters</div>
@@ -3560,6 +3569,22 @@ async function _cancelWriteBook(bookId) {
   }
 }
 window._cancelWriteBook = _cancelWriteBook;
+
+async function _retryWriteBook(bookId) {
+  if (!bookId) return;
+  const chatBox = document.getElementById('chat-messages');
+  try {
+    await api(`/api/ai-books/${bookId}/retry`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (chatBox) appendMsg(chatBox, 'assistant', 'Resuming — I\'ll pick up from the failed chapter.');
+    _startWritingPoll(bookId, chatBox);
+  } catch (err) {
+    if (chatBox) appendMsg(chatBox, 'assistant', 'Retry failed: ' + err.message);
+  }
+}
+window._retryWriteBook = _retryWriteBook;
 
 function _startWritingPoll(bookId, chatBox) {
   if (_writeBookPolling) clearInterval(_writeBookPolling);

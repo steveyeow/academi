@@ -204,7 +204,7 @@ def write_full_book(book_id: str) -> None:
     from .indexer import index_text
 
     book = get_ai_book(book_id)
-    if not book or book["status"] not in ("confirmed", "writing"):
+    if not book or book["status"] not in ("confirmed", "writing", "failed"):
         return
 
     update_ai_book_status(book_id, "writing")
@@ -215,6 +215,8 @@ def write_full_book(book_id: str) -> None:
     chapters = outline.get("chapters", [])
     previous_summaries: list[str] = []
 
+    existing_content = book.get("content") or {}
+
     for ch in chapters:
         # Check for cancellation before starting each chapter
         current = get_ai_book(book_id)
@@ -222,6 +224,12 @@ def write_full_book(book_id: str) -> None:
             log.info("Book %s was cancelled, stopping at chapter %d", book_id, ch["number"])
             _index_partial_book(book_id)
             return
+
+        ch_key = str(ch["number"])
+        if existing_content.get(ch_key, {}).get("content"):
+            previous_summaries.append(ch["summary"])
+            log.info("Skipping already-written chapter %d for book %s", ch["number"], book_id)
+            continue
 
         try:
             content, usage = write_chapter(
