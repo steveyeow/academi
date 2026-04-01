@@ -1049,6 +1049,17 @@ def debug_ai_book_test() -> dict[str, Any]:
     except Exception as e:
         result["steps"]["ai_books_table"] = f"FAIL: {e}"
 
+    # Step 5: Full outline generation (the actual failing path)
+    try:
+        outline, ai_msg, usage = generate_outline(
+            "A short guide to baking bread", {}, "en",
+        )
+        result["steps"]["generate_outline"] = f"ok: {outline.get('title', '?')} ({len(outline.get('chapters', []))} chapters)"
+    except Exception as e:
+        import traceback
+        result["steps"]["generate_outline"] = f"FAIL: {type(e).__name__}: {e}"
+        result["steps"]["generate_outline_tb"] = traceback.format_exc()[-500:]
+
     return result
 
 
