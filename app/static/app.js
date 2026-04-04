@@ -2997,7 +2997,14 @@ function coverColor(title) { let h = 0; for (let i = 0; i < title.length; i++) h
 function coverInitials(title) { return title.split(/[\s:—]+/).filter(w => w.length > 2).slice(0, 2).map(w => w[0].toUpperCase()).join(''); }
 
 function renderBookGrid(container, books) {
-  if (!books.length) { container.innerHTML = '<div class="empty-state"><p>No books found.</p></div>'; return; }
+  if (!books.length) {
+    if (booksLoadState === 'loading' || booksLoadState === 'idle') {
+      container.innerHTML = '<div class="empty-state"><span class="loading-dot">Loading books...</span></div>';
+      return;
+    }
+    container.innerHTML = '<div class="empty-state"><p>No books found.</p></div>';
+    return;
+  }
   container.innerHTML = books.map(b => {
     const coverBg = b.isAIGenerated ? 'background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)' : `background:${coverColor(b.title)}`;
     const cover = `<div class="card-cover-gen" style="${coverBg}"><span>${coverInitials(b.title)}</span></div>`;
@@ -4274,6 +4281,27 @@ async function renderReader(agentId) {
       </div>` : '';
   const previewLabel = isPreview ? `<span class="reader-cover-preview-label">Preview</span>` : '';
   const chapterCount = isAI ? d.chapters?.length : (detectedChapters?.length || 0);
+  const _rShareUrl = `${window.location.origin}/share/${esc(agentId)}`;
+  const _rTweetText = encodeURIComponent(`${d.title} — written by AI on Feynman`);
+  const _rTweetUrl = encodeURIComponent(_rShareUrl);
+  const _rShareHtml = isAI ? `
+        <div class="reader-share-bar">
+          <button type="button" class="reader-share-btn" onclick="event.stopPropagation();window.open('https://twitter.com/intent/tweet?text=${_rTweetText}&url=${_rTweetUrl}','_blank')" title="Share on X">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+          </button>
+          <button type="button" class="reader-share-btn" onclick="event.stopPropagation();navigator.clipboard.writeText('${_rShareUrl}');_showToast('Link copied')" title="Copy link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          </button>
+        </div>` : '';
+  const _rTopbarShareHtml = isAI ? `
+      <div class="reader-topbar-share">
+        <button type="button" class="reader-share-btn" onclick="event.stopPropagation();window.open('https://twitter.com/intent/tweet?text=${_rTweetText}&url=${_rTweetUrl}','_blank')" title="Share on X">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        </button>
+        <button type="button" class="reader-share-btn" onclick="event.stopPropagation();navigator.clipboard.writeText('${_rShareUrl}');_showToast('Link copied')" title="Copy link">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        </button>
+      </div>` : '';
   const titlePageHtml = `
     <div class="reader-cover">
       <div class="reader-cover-body">
@@ -4287,6 +4315,7 @@ async function renderReader(agentId) {
           ${chapterCount > 0 ? `<span class="reader-cover-dot"></span><span>${chapterCount} chapters</span>` : ''}
         </div>
         ${previewLabel}
+        ${_rShareHtml}
       </div>
       ${imprintHtml}
     </div>`;
@@ -4315,6 +4344,7 @@ async function renderReader(agentId) {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
       </a>
       <div class="reader-topbar-title">${esc(d.title)}</div>
+      ${_rTopbarShareHtml}
     </div>
     <div class="reader-layout">
       ${tocHtml ? `<aside class="reader-sidebar">${tocHtml}</aside>` : ''}
@@ -4390,7 +4420,18 @@ async function renderReader(agentId) {
             Chat
           </a>
         </div>`
-      : '<div class="reader-end-page"><p>End of book</p></div>';
+      : `<div class="reader-end-page">
+          <p>End of book</p>
+          ${isAI ? `<p class="reader-end-subtitle">Enjoyed this book? Share it with others</p>
+          <div class="reader-share-bar">
+            <button type="button" class="reader-share-btn" onclick="event.stopPropagation();window.open('https://twitter.com/intent/tweet?text=${_rTweetText}&url=${_rTweetUrl}','_blank')" title="Share on X">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+            </button>
+            <button type="button" class="reader-share-btn" onclick="event.stopPropagation();navigator.clipboard.writeText('${_rShareUrl}');_showToast('Link copied')" title="Copy link">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            </button>
+          </div>` : ''}
+        </div>`;
     _readerPages.push({ html: endHtml, chNum: -1 });
 
     document.getElementById('reader-page-total').textContent = _readerPages.length;
@@ -6350,6 +6391,8 @@ async function init() {
 
   await Promise.allSettled([loadAgents(), loadVotes(), loadTopics(), loadMinds()]);
   buildBookList();
+  // Re-render current page now that data is loaded (replaces loading placeholders)
+  navigate();
   await restoreSessions();
   renderChatHistory();
   updateAuthUI();
