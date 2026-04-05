@@ -49,6 +49,7 @@ from .core.db import (
     list_session_messages,
     list_user_interest_profile,
     list_votes,
+    rename_agent,
     update_agent_meta,
     update_agent_status,
     update_chat_session,
@@ -1172,6 +1173,28 @@ def api_delete_agent(agent_id: str, request: Request) -> dict[str, Any]:
     if not delete_agent(agent_id, user_id):
         raise HTTPException(status_code=403, detail="Delete not permitted")
     return {"status": "deleted"}
+
+
+class AgentRenameRequest(BaseModel):
+    name: str
+
+
+@app.patch("/api/agents/{agent_id}")
+def api_rename_agent(agent_id: str, payload: AgentRenameRequest, request: Request) -> dict[str, Any]:
+    user_id = _get_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    agent = get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    owner = agent.get("user_id") or (agent.get("meta") or {}).get("creator_user_id")
+    if owner and owner != user_id:
+        raise HTTPException(status_code=403, detail="Only the creator can rename this book")
+    new_name = payload.name.strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Name cannot be empty")
+    rename_agent(agent_id, new_name)
+    return get_agent(agent_id)
 
 
 def _run_index(agent_id: str, text: str) -> None:

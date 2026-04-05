@@ -827,6 +827,22 @@ def ensure_catalog_agents(catalog: list[dict[str, Any]]) -> None:
             ), (agent_id, book["title"], "catalog", book.get("author", ""), "catalog", json.dumps(meta), _utcnow()))
 
 
+def rename_agent(agent_id: str, new_name: str) -> None:
+    """Rename an agent (book title). Also syncs ai_books.title and meta_json.title."""
+    with get_conn() as conn:
+        row = _fetchone(conn, _q("SELECT meta_json FROM agents WHERE id = ?"), (agent_id,))
+        if not row:
+            return
+        meta = json.loads(row["meta_json"] or "{}")
+        meta["title"] = new_name
+        _execute(conn, _q(
+            "UPDATE agents SET name = ?, meta_json = ? WHERE id = ?"
+        ), (new_name, json.dumps(meta), agent_id))
+        _execute(conn, _q(
+            "UPDATE ai_books SET title = ?, updated_at = ? WHERE agent_id = ?"
+        ), (new_name, _utcnow(), agent_id))
+
+
 def update_agent_meta(agent_id: str, updates: dict[str, Any]) -> None:
     """Merge updates into agent's meta_json without overwriting other keys."""
     with get_conn() as conn:

@@ -1718,6 +1718,7 @@ function buildBookList() {
       isCatalog: a.type === 'catalog',
       isAIGenerated: a.type === 'ai_book',
       creatorName: meta.creator_name || '',
+      userId: a.user_id || meta.creator_user_id || '',
       upvotes: 0,
       created_at: a.created_at || '',
     };
@@ -3095,6 +3096,68 @@ async function deleteBook(agentId) {
 }
 window.deleteBook = deleteBook;
 
+// ─── Rename book (inline edit) ───
+function isBookOwner(book) {
+  if (!currentUser) return false;
+  return book?.userId && book.userId === currentUser.id;
+}
+
+async function renameBook(agentId, newName) {
+  const trimmed = newName.trim();
+  if (!trimmed) return false;
+  try {
+    await api('/api/agents/' + agentId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: trimmed }),
+    });
+    await loadAgents();
+    return true;
+  } catch (err) {
+    _showToast('Rename failed: ' + err.message);
+    return false;
+  }
+}
+
+function makeEditableTitle(el, agentId, currentTitle) {
+  el.style.cursor = 'pointer';
+  el.title = 'Click to rename';
+  el.addEventListener('click', (e) => {
+    if (el.querySelector('input')) return;
+    e.stopPropagation();
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentTitle;
+    input.className = 'inline-title-input';
+    input.style.cssText = `font:inherit;width:100%;background:var(--bg-secondary,#f5f5f5);border:1px solid var(--border-color,#ddd);border-radius:6px;padding:4px 8px;outline:none;color:inherit;`;
+    const origHtml = el.innerHTML;
+    el.innerHTML = '';
+    el.appendChild(input);
+    input.focus();
+    input.select();
+    const finish = async () => {
+      const v = input.value.trim();
+      if (v && v !== currentTitle) {
+        el.innerHTML = esc(v);
+        const ok = await renameBook(agentId, v);
+        if (!ok) el.innerHTML = origHtml;
+        else {
+          currentTitle = v;
+          if (getRoute().page === 'library') renderLibraryGrid();
+        }
+      } else {
+        el.innerHTML = origHtml;
+      }
+      makeEditableTitle(el, agentId, currentTitle);
+    };
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); finish(); }
+      if (ev.key === 'Escape') { el.innerHTML = origHtml; makeEditableTitle(el, agentId, currentTitle); }
+    });
+    input.addEventListener('blur', finish);
+  }, { once: true });
+}
+
 // ─── Share book ───
 async function shareBook(title, agentId) {
   const url = `${window.location.origin}/share/${agentId}?t=${Math.floor(Date.now()/86400000)}`;
@@ -3760,9 +3823,18 @@ async function renderBookDetail(bookId) {
   const meta = agent?.meta || {};
   const coverUrl = isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg` : '';
 
+  const canEdit = isBookOwner(book);
+  const editIcon = canEdit ? ' <svg class="editable-hint" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0;transition:opacity .15s;vertical-align:middle;margin-left:4px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>' : '';
   headerEl.innerHTML = `
     ${coverUrl ? `<img class="book-inline-cover" src="${coverUrl}" alt="" onerror="this.style.display='none'" />` : ''}
-    <div class="book-inline-info"><h2>${esc(title)}</h2><p>${esc(author)}</p></div>`;
+    <div class="book-inline-info"><h2 id="book-detail-title">${esc(title)}${editIcon}</h2><p>${esc(author)}</p></div>`;
+  if (canEdit) {
+    const h2 = headerEl.querySelector('#book-detail-title');
+    h2.style.cssText = 'cursor:pointer;';
+    h2.addEventListener('mouseenter', () => { const svg = h2.querySelector('.editable-hint'); if (svg) svg.style.opacity = '0.5'; });
+    h2.addEventListener('mouseleave', () => { const svg = h2.querySelector('.editable-hint'); if (svg) svg.style.opacity = '0'; });
+    makeEditableTitle(h2, bookId, title);
+  }
 
   metaSidebar.innerHTML = `
     <h3 class="sidebar-title">BOOK INFO</h3>
@@ -4524,6 +4596,13 @@ async function renderReader(agentId) {
         shareWrap.classList.remove('open');
       });
     }
+  }
+
+  // Editable title for owner in reader
+  const _readerBook = allBooks.find(b => b.agentId === agentId);
+  if (isBookOwner(_readerBook)) {
+    const coverTitle = page.querySelector('.reader-cover-title');
+    if (coverTitle) makeEditableTitle(coverTitle, agentId, d.title);
   }
 
   // Paginate: measure content into pages that fit the viewport
