@@ -1305,6 +1305,52 @@ body {
 .popover-action:disabled { opacity: 0.6; cursor: default; }
 .popover-action:disabled:hover { background: transparent; }
 .popover-action svg { flex-shrink: 0; }
+.popover-url-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 12px 8px;
+}
+.popover-url-input {
+  flex: 1; min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+.popover-url-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+.popover-url-import-btn {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-chat);
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.popover-url-import-btn:hover { background: rgba(128,128,128,0.08); }
+.popover-url-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin: 0;
+  padding: 0 12px 8px;
+  opacity: 0.92;
+}
+.popover-url-hint strong {
+  color: color-mix(in srgb, var(--text) 78%, var(--text-muted));
+  font-weight: 600;
+}
+.composer-popover:has(.popover-url-hint) {
+  max-height: 380px;
+}
 .popover-invite-spinner {
   display: inline-block; width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
   border: 2px solid color-mix(in srgb, var(--text-muted) 30%, transparent);

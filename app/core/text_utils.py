@@ -35,6 +35,11 @@ def _html_to_text(html: str) -> str:
     return extractor.get_text()
 
 
+def html_to_plain_text(html: str) -> str:
+    """Strip HTML tags to plain text (for web page imports)."""
+    return normalize_text(_html_to_text(html))
+
+
 def normalize_text(text: str) -> str:
     text = text.replace("\u00a0", " ")
     return WHITESPACE_RE.sub(" ", text).strip()

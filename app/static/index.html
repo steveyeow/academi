@@ -221,12 +221,17 @@
                   <input type="file" id="upload-file-input" accept=".txt,.pdf,.epub,.md" multiple hidden />
                   <div class="composer-popover composer-popover-down hidden" id="home-popover">
                     <div class="popover-section-label">SELECT BOOKS</div>
-                    <div class="popover-hint">Choose books to ground the conversation. You can also upload new ones.</div>
+                    <div class="popover-hint">Choose books to ground the conversation. Upload files or paste a page URL.</div>
                     <input type="text" class="popover-search" id="home-popover-search" placeholder="Search books..." autocomplete="off" />
                     <button class="popover-action" id="home-popover-upload">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                       Upload your book
                     </button>
+                    <div class="popover-url-row">
+                      <input type="url" id="home-popover-url-input" class="popover-url-input" placeholder="https://… (page with the text)" autocomplete="off" />
+                      <button type="button" id="home-popover-url-import" class="popover-url-import-btn">Import</button>
+                    </div>
+                    <p class="popover-url-hint">Open the <strong>exact page</strong> that has the passage you want (article, transcript, chapter—not the site home or a topic list). We only import <strong>this one page</strong>; we don’t follow links inside it.</p>
                     <div class="popover-divider"></div>
                     <div id="home-popover-book-list" class="popover-book-list"></div>
                     <div id="home-popover-no-books" class="popover-empty">No books in library</div>
@@ -270,12 +275,17 @@
                       <input type="file" id="chat-upload-file-input" accept=".txt,.pdf,.epub,.md" multiple hidden />
                       <div class="composer-popover hidden" id="chat-popover">
                         <div class="popover-section-label">SELECT BOOKS</div>
-                        <div class="popover-hint">Choose books to ground the conversation. You can also upload new ones.</div>
+                        <div class="popover-hint">Choose books to ground the conversation. Upload files or paste a page URL.</div>
                         <input type="text" class="popover-search" id="chat-popover-search" placeholder="Search books..." autocomplete="off" />
                         <button class="popover-action" id="popover-upload-action">
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                           Upload your book
                         </button>
+                        <div class="popover-url-row">
+                          <input type="url" id="chat-popover-url-input" class="popover-url-input" placeholder="https://… (page with the text)" autocomplete="off" />
+                          <button type="button" id="chat-popover-url-import" class="popover-url-import-btn">Import</button>
+                        </div>
+                        <p class="popover-url-hint">Open the <strong>exact page</strong> that has the passage you want (article, transcript, chapter—not the site home or a topic list). We only import <strong>this one page</strong>; we don’t follow links inside it.</p>
                         <div class="popover-divider"></div>
                         <div id="popover-book-list" class="popover-book-list"></div>
                         <div id="popover-no-books" class="popover-empty">No books in library</div>

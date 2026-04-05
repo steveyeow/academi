@@ -3826,6 +3826,45 @@ async function handleFileUpload(files) {
   renderSelectedChips();
 }
 
+async function handleUploadFromUrl(rawUrl, urlInputEl) {
+  const url = (rawUrl || '').trim();
+  if (!url) {
+    showUploadBanner('Paste a URL first', null, { mode: 'error' });
+    hideUploadBanner(4000);
+    return;
+  }
+  showUploadBanner('Fetching page…', null, { mode: 'progress' });
+  try {
+    const result = await api('/api/agents/upload-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (urlInputEl) urlInputEl.value = '';
+    document.querySelectorAll('.composer-popover').forEach(p => p.classList.add('hidden'));
+    await loadAgents();
+    ensurePolling();
+    const book = allBooks.find(b => b.agentId === result.id);
+    if (book) selectedBooks.set(book.id, book);
+    renderSelectedChips();
+    if (result.duplicate) {
+      showUploadBanner(book ? `"${book.title}" is already in your library — selected` : 'Already in your library — selected', null, { mode: 'success' });
+      hideUploadBanner(5000);
+    } else {
+      showUploadBanner(book ? `"${book.title}" imported — indexing…` : 'Page imported — indexing…', null, { mode: 'success' });
+      hideUploadBanner(4000);
+    }
+  } catch (err) {
+    if (err.message && err.message.includes('Upload limit reached')) {
+      showUploadBanner(err.message, null, { mode: 'error' });
+      hideUploadBanner(6000);
+      return;
+    }
+    showUploadBanner(`Import failed: ${err.message}`, null, { mode: 'error' });
+    hideUploadBanner(6000);
+  }
+}
+
 // ─── Upvote ───
 async function handleUpvote(title) {
   try {
@@ -6483,6 +6522,11 @@ function bindComposerControls() {
   uploadBtn.addEventListener('click', e => { e.stopPropagation(); togglePopover('home-popover', 'home-popover-book-list', 'home-popover-no-books'); });
   document.getElementById('home-popover-upload').addEventListener('click', () => { closeAllPopovers(); uploadInput.click(); });
   uploadInput.addEventListener('change', () => { if (uploadInput.files.length) { handleFileUpload(uploadInput.files); uploadInput.value = ''; } });
+  const homeUrlInput = document.getElementById('home-popover-url-input');
+  document.getElementById('home-popover-url-import').addEventListener('click', () => handleUploadFromUrl(homeUrlInput.value, homeUrlInput));
+  homeUrlInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); handleUploadFromUrl(homeUrlInput.value, homeUrlInput); }
+  });
   document.getElementById('home-popover-search').addEventListener('input', () => {
     renderPopoverBookList('home-popover-book-list', 'home-popover-no-books');
   });
@@ -6509,6 +6553,11 @@ function bindComposerControls() {
   chatPlusBtn.addEventListener('click', e => { e.stopPropagation(); togglePopover('chat-popover', 'popover-book-list', 'popover-no-books'); });
   document.getElementById('popover-upload-action').addEventListener('click', () => { closeAllPopovers(); chatUploadInput.click(); });
   chatUploadInput.addEventListener('change', () => { if (chatUploadInput.files.length) { handleFileUpload(chatUploadInput.files); chatUploadInput.value = ''; } });
+  const chatUrlInput = document.getElementById('chat-popover-url-input');
+  document.getElementById('chat-popover-url-import').addEventListener('click', () => handleUploadFromUrl(chatUrlInput.value, chatUrlInput));
+  chatUrlInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); handleUploadFromUrl(chatUrlInput.value, chatUrlInput); }
+  });
   document.getElementById('chat-popover-search').addEventListener('input', () => {
     renderPopoverBookList('popover-book-list', 'popover-no-books');
   });

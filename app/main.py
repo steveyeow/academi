@@ -77,6 +77,7 @@ from .core.minds import (
 from .core.skills import resolve_multi_agent, resolve_skills
 from .core.sources import fetch_book_content, fetch_wikipedia_summary
 from .core.text_utils import extract_text_from_file
+from .core.url_fetch import fetch_url_as_book_text
 from .core.ai_writer import generate_outline, refine_outline, write_full_book
 
 log = logging.getLogger(__name__)
@@ -246,6 +247,10 @@ class TopicAgentRequest(BaseModel):
     topic: str = Field(..., min_length=1)
     language: str = Field("en")
     use_wikipedia: bool = Field(True)
+
+
+class UploadUrlRequest(BaseModel):
+    url: str = Field(..., min_length=1, description="Public http(s) page to import as text")
 
 
 class ChatRequest(BaseModel):
@@ -1139,6 +1144,38 @@ def api_create_upload_agent(request: Request, background_tasks: BackgroundTasks,
     finally:
         dest.unlink(missing_ok=True)
 
+    background_tasks.add_task(_run_index, agent_id, text)
+    _track_usage(request, "upload")
+    return {"id": agent_id, "status": "indexing"}
+
+
+@app.post("/api/agents/upload-url")
+def api_create_upload_from_url(
+    payload: UploadUrlRequest, request: Request, background_tasks: BackgroundTasks
+) -> dict[str, Any]:
+    """Import plain text from a public web page (HTML or text) as a user book."""
+    _check_quota(request, "upload")
+    user_id = _get_user_id(request)
+    try:
+        text, name, final_url = fetch_url_as_book_text(payload.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    name = name.strip()[:240]
+
+    existing = find_existing_upload(name)
+    if existing:
+        return {"id": existing["id"], "status": existing["status"], "duplicate": True, "name": existing["name"]}
+
+    _check_upload_limit(request)
+
+    agent_id = create_agent(
+        name=name,
+        agent_type="upload",
+        source=final_url,
+        meta={"import_url": final_url},
+        user_id=user_id,
+    )
     background_tasks.add_task(_run_index, agent_id, text)
     _track_usage(request, "upload")
     return {"id": agent_id, "status": "indexing"}
