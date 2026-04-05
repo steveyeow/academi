@@ -3197,10 +3197,32 @@ async function startWriteBook() {
 }
 window.startWriteBook = startWriteBook;
 
+function _shareTweetAuthorName(bookOrReader) {
+  if (!bookOrReader) return 'AI';
+  if (bookOrReader.author) {
+    const a = String(bookOrReader.author).replace(/\s*·\s*AI\s*$/i, '').trim();
+    if (a) return a;
+  }
+  const p = bookOrReader.preferences || {};
+  const c = p.creator_name;
+  if (c && c !== 'User') return c;
+  return 'AI';
+}
+
+function _shareTweetHost() {
+  try {
+    const h = window.location.hostname;
+    if (h) return h;
+  } catch (_) {}
+  return 'feynman.wiki';
+}
+
 function _wireCanvasShareMenus(root, book) {
   if (!book?.agent_id) return;
   const shareUrl = `${window.location.origin}/share/${encodeURIComponent(book.agent_id)}`;
-  const twitterText = encodeURIComponent(`${book.title || ''} — written by AI on Feynman`);
+  const twitterText = encodeURIComponent(
+    `${book.title || ''} — written by ${_shareTweetAuthorName(book)} on ${_shareTweetHost()}`
+  );
   const twitterUrl = encodeURIComponent(shareUrl);
   const tweetIntentUrl = `https://twitter.com/intent/tweet?text=${twitterText}&url=${twitterUrl}`;
   const emailSubject = encodeURIComponent(book.title || 'Check out this book');
@@ -4418,7 +4440,9 @@ async function renderReader(agentId) {
   const previewLabel = isPreview ? `<span class="reader-cover-preview-label">Preview</span>` : '';
   const chapterCount = isAI ? d.chapters?.length : (detectedChapters?.length || 0);
   const _rShareUrl = `${window.location.origin}/share/${encodeURIComponent(agentId)}`;
-  const _rTweetText = encodeURIComponent(`${d.title} — written by AI on Feynman`);
+  const _rTweetText = encodeURIComponent(
+    `${d.title} — written by ${_shareTweetAuthorName(d)} on ${_shareTweetHost()}`
+  );
   const _rTweetUrl = encodeURIComponent(_rShareUrl);
   const _rTweetIntentUrl = `https://twitter.com/intent/tweet?text=${_rTweetText}&url=${_rTweetUrl}`;
   const _rTopbarShareHtml = isAI ? `
