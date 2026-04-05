@@ -544,19 +544,23 @@ def robots_txt():
     content = f"""User-agent: *
 Allow: /
 Disallow: /api/
+Allow: /api/og-image/
 Disallow: /static/
 
 User-agent: GPTBot
 Allow: /
 Disallow: /api/
+Allow: /api/og-image/
 
 User-agent: ChatGPT-User
 Allow: /
 Disallow: /api/
+Allow: /api/og-image/
 
 User-agent: ClaudeBot
 Allow: /
 Disallow: /api/
+Allow: /api/og-image/
 
 User-agent: Google-Extended
 Allow: /
@@ -564,14 +568,17 @@ Allow: /
 User-agent: PerplexityBot
 Allow: /
 Disallow: /api/
+Allow: /api/og-image/
 
 User-agent: Applebot-Extended
 Allow: /
 Disallow: /api/
+Allow: /api/og-image/
 
 User-agent: cohere-ai
 Allow: /
 Disallow: /api/
+Allow: /api/og-image/
 
 Sitemap: {_SITE_URL}/sitemap.xml
 """
@@ -776,9 +783,16 @@ The project draws inspiration from Richard Feynman's approach to learning:
 
 
 @app.get("/share/{agent_id}", response_class=HTMLResponse)
-def share_page(agent_id: str, request: Request) -> HTMLResponse:
-    """Serve a lightweight page with OG/Twitter meta tags for social sharing, then redirect to the reader."""
+def share_page(agent_id: str) -> HTMLResponse:
+    """Serve a lightweight page with OG/Twitter meta tags for social sharing.
+
+    Crawlers (Twitter, etc.) must see stable og:image URLs and must not be sent
+    through meta-refresh to the SPA (hash routes strip book-specific tags).
+    Humans are redirected via JavaScript only so bots keep this HTML + image URL.
+    """
     from html import escape as html_esc
+    from urllib.parse import quote
+
     agent = get_agent(agent_id)
     book = get_ai_book_by_agent(agent_id) if agent else None
     title = html_esc(book["title"] if book and book.get("title") else (agent["title"] if agent else "Untitled"))
@@ -786,10 +800,15 @@ def share_page(agent_id: str, request: Request) -> HTMLResponse:
     subtitle = html_esc(outline.get("subtitle", "") if isinstance(outline, dict) else "")
     chapter_count = len(outline.get("chapters", [])) if isinstance(outline, dict) else 0
     desc = html_esc(subtitle or f"A {chapter_count}-chapter book created with Feynman AI")
-    base = str(request.base_url).rstrip("/")
-    reader_url = f"{base}/#/read/{html_esc(agent_id)}"
+    base = _SITE_URL
+    id_path = quote(agent_id, safe="")
+    reader_url = f"{base}/#/read/{id_path}"
     v = config.OG_IMAGE_CACHE_VERSION
-    og_image_url = f"{base}/api/og-image/{html_esc(agent_id)}?v={v}"
+    og_image_url = f"{base}/api/og-image/{id_path}?v={v}"
+    share_canonical = f"{base}/share/{id_path}"
+
+    # JSON-escape for use inside <script> (human redirect only; crawlers do not run JS)
+    reader_js = json.dumps(reader_url)
 
     html = f"""<!DOCTYPE html>
 <html lang="en"><head>
@@ -800,17 +819,19 @@ def share_page(agent_id: str, request: Request) -> HTMLResponse:
 <meta property="og:title" content="{title}">
 <meta property="og:description" content="{desc}">
 <meta property="og:image" content="{og_image_url}">
+<meta property="og:image:secure_url" content="{og_image_url}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:url" content="{base}/share/{html_esc(agent_id)}">
+<meta property="og:url" content="{share_canonical}">
 <meta property="og:site_name" content="Feynman">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{title}">
 <meta name="twitter:description" content="{desc}">
 <meta name="twitter:image" content="{og_image_url}">
-<meta http-equiv="refresh" content="0;url={reader_url}">
 </head><body>
-<p>Redirecting to <a href="{reader_url}">{title}</a>…</p>
+<p>Redirecting to <a href="{html_esc(reader_url)}">{title}</a>…</p>
+<script>window.location.replace({reader_js});</script>
+<noscript><p><a href="{html_esc(reader_url)}">Continue to the book</a></p></noscript>
 </body></html>"""
     return HTMLResponse(html)
 
