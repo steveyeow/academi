@@ -823,7 +823,7 @@ def share_page(agent_id: str) -> HTMLResponse:
     id_path = quote(agent_id, safe="")
     reader_url = f"{base}/#/read/{id_path}"
     v = config.OG_IMAGE_CACHE_VERSION
-    og_image_url = f"{base}/api/og-image/{id_path}?v={v}"
+    og_image_url = f"{base}/share/{id_path}/og.png?v={v}"
     share_canonical = f"{base}/share/{id_path}"
 
     # JSON-escape for use inside <script> (human redirect only; crawlers do not run JS)
@@ -855,9 +855,14 @@ def share_page(agent_id: str) -> HTMLResponse:
     return HTMLResponse(html)
 
 
+@app.get("/share/{agent_id}/og.png")
 @app.get("/api/og-image/{agent_id}")
 def api_og_image(agent_id: str):
-    """Generate a dynamic Open Graph image for a book."""
+    """Generate a dynamic Open Graph image for a book.
+
+    Primary path is /share/{id}/og.png (crawler-friendly, outside /api/).
+    Legacy /api/og-image/{id} kept for backward compat.
+    """
     from fastapi.responses import Response
     from .core.og_image import generate_og_image
 
@@ -1903,6 +1908,15 @@ def api_ai_book_get(
                 book["status"] = "failed"
         except Exception:
             pass
+
+    # Enrich with creator_name from agent meta for frontend share features
+    agent = get_agent(book.get("agent_id", ""))
+    if agent:
+        meta = agent.get("meta") or {}
+        creator = meta.get("creator_name", "")
+        if not creator or creator == "User":
+            creator = _resolve_creator_name(meta.get("creator_user_id") or agent.get("user_id") or "")
+        book["creator_name"] = creator or ""
 
     return book
 

@@ -3200,7 +3200,7 @@ window.startWriteBook = startWriteBook;
 function _wireCanvasShareMenus(root, book) {
   if (!book?.agent_id) return;
   const shareUrl = `${window.location.origin}/share/${encodeURIComponent(book.agent_id)}`;
-  const _canvasAuthor = book.preferences?.creator_name && book.preferences.creator_name !== 'User' ? book.preferences.creator_name : '';
+  const _canvasAuthor = book.creator_name || '';
   const twitterText = encodeURIComponent(`${book.title || ''} — by ${_canvasAuthor || 'AI'} on feynman.wiki`);
   const twitterUrl = encodeURIComponent(shareUrl);
   const tweetIntentUrl = `https://twitter.com/intent/tweet?text=${twitterText}&url=${twitterUrl}`;
