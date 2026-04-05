@@ -3160,7 +3160,7 @@ async function _restoreWriteBookState(session, chatBox) {
     if (book.status === 'writing') {
       _startWritingPoll(aiBookId, chatBox);
     } else if (book.status === 'completed' || book.status === 'cancelled' || book.status === 'failed') {
-      _showBookCanvas(_renderCanvasWritingProgress(book));
+      _showBookCanvas(_renderCanvasWritingProgress(book), book);
     } else if (book.status === 'outlining') {
       _showBookCanvas(_renderCanvasOutline(book.outline, aiBookId));
     }
@@ -3197,11 +3197,50 @@ async function startWriteBook() {
 }
 window.startWriteBook = startWriteBook;
 
-function _showBookCanvas(html) {
+function _wireCanvasShareMenus(root, book) {
+  if (!book?.agent_id) return;
+  const shareUrl = `${window.location.origin}/share/${encodeURIComponent(book.agent_id)}`;
+  const twitterText = encodeURIComponent(`${book.title || ''} — written by AI on Feynman`);
+  const twitterUrl = encodeURIComponent(shareUrl);
+  const tweetIntentUrl = `https://twitter.com/intent/tweet?text=${twitterText}&url=${twitterUrl}`;
+  const emailSubject = encodeURIComponent(book.title || 'Check out this book');
+  const emailBody = encodeURIComponent(`I created "${book.title || ''}" with Feynman AI:\n${shareUrl}`);
+  const mailtoUrl = `mailto:?subject=${emailSubject}&body=${emailBody}`;
+
+  root.querySelectorAll('.canvas-share-wrap').forEach(wrap => {
+    const trigger = wrap.querySelector('.canvas-share-trigger');
+    const xBtn = wrap.querySelector('.canvas-share-x');
+    const copyBtn = wrap.querySelector('.canvas-share-copy');
+    const mailBtn = wrap.querySelector('.canvas-share-mail');
+    if (trigger) trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      wrap.classList.toggle('open');
+    });
+    if (xBtn) xBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.open(tweetIntentUrl, '_blank');
+      wrap.classList.remove('open');
+    });
+    if (copyBtn) copyBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(shareUrl);
+      _showToast('Link copied');
+      wrap.classList.remove('open');
+    });
+    if (mailBtn) mailBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.open(mailtoUrl);
+      wrap.classList.remove('open');
+    });
+  });
+}
+
+function _showBookCanvas(html, shareWireBook) {
   const canvas = document.getElementById('book-canvas');
   const content = document.getElementById('book-canvas-content');
   if (!canvas || !content) return;
   content.innerHTML = html;
+  if (shareWireBook) _wireCanvasShareMenus(content, shareWireBook);
   if (!canvas.classList.contains('visible')) {
     canvas.classList.add('visible');
     document.getElementById('chat-right-sidebar')?.classList.remove('visible');
@@ -3402,13 +3441,6 @@ function _renderCanvasWritingProgress(book) {
     ? `<button class="canvas-cancel-btn" onclick="_cancelWriteBook('${esc(book.id)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop Writing</button>`
     : '';
 
-  const _shareUrl = `${window.location.origin}/share/${esc(book.agent_id)}`;
-  const _shareTitle = esc(book.title || '');
-  const _twitterText = encodeURIComponent(`${book.title} — written by AI on Feynman`);
-  const _twitterUrl = encodeURIComponent(_shareUrl);
-  const _emailSubject = encodeURIComponent(book.title || 'Check out this book');
-  const _emailBody = encodeURIComponent(`I created "${book.title}" with Feynman AI:\n${_shareUrl}`);
-
   let footer = '';
   if (book.status === 'completed') {
     footer = `<div class="canvas-divider"></div>
@@ -3423,20 +3455,20 @@ function _renderCanvasWritingProgress(book) {
           Read
         </button>
         <div class="canvas-share-wrap">
-          <button class="canvas-action-btn" onclick="this.parentElement.classList.toggle('open')">
+          <button type="button" class="canvas-action-btn canvas-share-trigger">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
             Share
           </button>
           <div class="canvas-share-popup">
-            <button class="canvas-share-opt" onclick="window.open('https://twitter.com/intent/tweet?text=${_twitterText}&amp;url=${_twitterUrl}','_blank');this.closest('.canvas-share-wrap').classList.remove('open')">
+            <button type="button" class="canvas-share-opt canvas-share-x">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
               Share on Twitter
             </button>
-            <button class="canvas-share-opt" onclick="navigator.clipboard.writeText('${_shareUrl}');_showToast('Link copied');this.closest('.canvas-share-wrap').classList.remove('open')">
+            <button type="button" class="canvas-share-opt canvas-share-copy">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
               Copy URL
             </button>
-            <button class="canvas-share-opt" onclick="window.open('mailto:?subject=${_emailSubject}&amp;body=${_emailBody}');this.closest('.canvas-share-wrap').classList.remove('open')">
+            <button type="button" class="canvas-share-opt canvas-share-mail">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
               Send via Email
             </button>
@@ -3465,20 +3497,20 @@ function _renderCanvasWritingProgress(book) {
           Read
         </button>
         <div class="canvas-share-wrap">
-          <button class="canvas-action-btn" onclick="this.parentElement.classList.toggle('open')">
+          <button type="button" class="canvas-action-btn canvas-share-trigger">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
             Share
           </button>
           <div class="canvas-share-popup">
-            <button class="canvas-share-opt" onclick="window.open('https://twitter.com/intent/tweet?text=${_twitterText}&amp;url=${_twitterUrl}','_blank');this.closest('.canvas-share-wrap').classList.remove('open')">
+            <button type="button" class="canvas-share-opt canvas-share-x">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
               Share on Twitter
             </button>
-            <button class="canvas-share-opt" onclick="navigator.clipboard.writeText('${_shareUrl}');_showToast('Link copied');this.closest('.canvas-share-wrap').classList.remove('open')">
+            <button type="button" class="canvas-share-opt canvas-share-copy">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
               Copy URL
             </button>
-            <button class="canvas-share-opt" onclick="window.open('mailto:?subject=${_emailSubject}&amp;body=${_emailBody}');this.closest('.canvas-share-wrap').classList.remove('open')">
+            <button type="button" class="canvas-share-opt canvas-share-mail">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
               Send via Email
             </button>
@@ -3673,7 +3705,7 @@ function _startWritingPoll(bookId, chatBox) {
         _stopWriteBookPolling();
         return;
       }
-      _showBookCanvas(_renderCanvasWritingProgress(book));
+      _showBookCanvas(_renderCanvasWritingProgress(book), book);
 
       if (book.status === 'completed' || book.status === 'failed' || book.status === 'cancelled') {
         _stopWriteBookPolling();
