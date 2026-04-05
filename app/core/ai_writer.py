@@ -3,11 +3,15 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from typing import Any
 
 from .providers import ChatResult, ProviderError, chat_with_fallback
 
 log = logging.getLogger(__name__)
+
+_write_full_book_lock = threading.Lock()
+_write_full_book_inflight: set[str] = set()
 
 _OUTLINE_SYSTEM = (
     "You are a professional book author and editor. The user wants you to create a custom book. "
@@ -193,8 +197,35 @@ def write_chapter(
     return result.content.strip(), _extract_usage(result)
 
 
+def all_outline_chapters_have_content(book: dict[str, Any]) -> bool:
+    """True when every chapter in the outline has saved body text."""
+    outline = book.get("outline") or {}
+    chapters = outline.get("chapters") or []
+    if not chapters:
+        return False
+    content = book.get("content") or {}
+    for ch in chapters:
+        data = content.get(str(ch["number"]), {})
+        if not (data.get("content") or "").strip():
+            return False
+    return True
+
+
 def write_full_book(book_id: str) -> None:
     """Background task: write all chapters for an ai_book, then index it."""
+    with _write_full_book_lock:
+        if book_id in _write_full_book_inflight:
+            log.debug("write_full_book already running for %s, skip duplicate", book_id)
+            return
+        _write_full_book_inflight.add(book_id)
+    try:
+        _write_full_book_impl(book_id)
+    finally:
+        with _write_full_book_lock:
+            _write_full_book_inflight.discard(book_id)
+
+
+def _write_full_book_impl(book_id: str) -> None:
     from .db import (
         get_ai_book,
         update_ai_book_chapter,

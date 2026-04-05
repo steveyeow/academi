@@ -78,7 +78,12 @@ from .core.skills import resolve_multi_agent, resolve_skills
 from .core.sources import fetch_book_content, fetch_wikipedia_summary
 from .core.text_utils import extract_text_from_file
 from .core.url_fetch import fetch_url_as_book_text
-from .core.ai_writer import generate_outline, refine_outline, write_full_book
+from .core.ai_writer import (
+    all_outline_chapters_have_content,
+    generate_outline,
+    refine_outline,
+    write_full_book,
+)
 
 log = logging.getLogger(__name__)
 
@@ -1070,7 +1075,18 @@ def _enrich_ai_book_agents(agents: list[dict[str, Any]]) -> None:
             continue
         try:
             ai_book = get_ai_book_by_agent(agent["id"])
-            if not ai_book or not ai_book.get("updated_at"):
+            if not ai_book:
+                continue
+            # All chapters saved but never finalized (index/complete) — same heal as GET /api/ai-books/{id}
+            if all_outline_chapters_have_content(ai_book):
+                threading.Thread(
+                    target=write_full_book,
+                    args=(ai_book["id"],),
+                    daemon=True,
+                    name=f"heal-ai-book-{ai_book['id'][:8]}",
+                ).start()
+                continue
+            if not ai_book.get("updated_at"):
                 continue
             raw = ai_book["updated_at"]
             updated = _dt.fromisoformat(raw.replace("Z", "+00:00")) if isinstance(raw, str) else raw
@@ -1814,7 +1830,11 @@ def api_ai_book_retry(book_id: str, request: Request, background_tasks: Backgrou
 
 
 @app.get("/api/ai-books/{book_id}")
-def api_ai_book_get(book_id: str, request: Request) -> dict[str, Any]:
+def api_ai_book_get(
+    book_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> dict[str, Any]:
     """Get AI book details including writing progress."""
     user_id = _get_user_id(request) or "anon"
     book = get_ai_book(book_id)
@@ -1823,8 +1843,13 @@ def api_ai_book_get(book_id: str, request: Request) -> dict[str, Any]:
     if book["user_id"] != user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    if book["status"] == "writing" and book.get("updated_at"):
+    # If every chapter is on disk but status never flipped (crash/hang before indexing),
+    # re-run the writer — it skips written chapters and completes indexing.
+    if book["status"] == "writing" and all_outline_chapters_have_content(book):
+        background_tasks.add_task(write_full_book, book_id)
+    elif book["status"] == "writing" and book.get("updated_at"):
         from datetime import datetime, timezone
+
         try:
             updated = datetime.fromisoformat(book["updated_at"].replace("Z", "+00:00"))
             if updated.tzinfo is None:

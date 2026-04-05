@@ -3879,6 +3879,11 @@ async function handleUpvote(title) {
 window.handleUpvote = handleUpvote;
 
 // ─── Popover & book selection ───
+function collapseBookUrlPanels() {
+  document.querySelectorAll('.popover-url-panel').forEach(p => p.classList.add('hidden'));
+  document.querySelectorAll('.popover-url-toggle').forEach(t => t.setAttribute('aria-expanded', 'false'));
+}
+
 function togglePopover(popId, listId, emptyId) {
   popId = popId || 'chat-popover';
   listId = listId || 'popover-book-list';
@@ -3887,6 +3892,7 @@ function togglePopover(popId, listId, emptyId) {
   const show = pop.classList.contains('hidden');
   document.querySelectorAll('.composer-popover').forEach(p => p.classList.add('hidden'));
   if (show) {
+    collapseBookUrlPanels();
     pop.classList.remove('hidden');
     renderPopoverBookList(listId, emptyId);
     const search = pop.querySelector('.popover-search');
@@ -6527,6 +6533,15 @@ function bindComposerControls() {
   homeUrlInput.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); handleUploadFromUrl(homeUrlInput.value, homeUrlInput); }
   });
+  document.getElementById('home-popover-url-toggle').addEventListener('click', e => {
+    e.stopPropagation();
+    const panel = document.getElementById('home-popover-url-panel');
+    const toggle = document.getElementById('home-popover-url-toggle');
+    const willOpen = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', !willOpen);
+    toggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    if (willOpen) requestAnimationFrame(() => homeUrlInput.focus());
+  });
   document.getElementById('home-popover-search').addEventListener('input', () => {
     renderPopoverBookList('home-popover-book-list', 'home-popover-no-books');
   });
@@ -6557,6 +6572,15 @@ function bindComposerControls() {
   document.getElementById('chat-popover-url-import').addEventListener('click', () => handleUploadFromUrl(chatUrlInput.value, chatUrlInput));
   chatUrlInput.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); handleUploadFromUrl(chatUrlInput.value, chatUrlInput); }
+  });
+  document.getElementById('chat-popover-url-toggle').addEventListener('click', e => {
+    e.stopPropagation();
+    const panel = document.getElementById('chat-popover-url-panel');
+    const toggle = document.getElementById('chat-popover-url-toggle');
+    const willOpen = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', !willOpen);
+    toggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    if (willOpen) requestAnimationFrame(() => chatUrlInput.focus());
   });
   document.getElementById('chat-popover-search').addEventListener('input', () => {
     renderPopoverBookList('popover-book-list', 'popover-no-books');
