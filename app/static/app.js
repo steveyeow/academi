@@ -3428,7 +3428,7 @@ function _renderCanvasWritingProgress(book) {
             Share
           </button>
           <div class="canvas-share-popup">
-            <button class="canvas-share-opt" onclick="window.open('https://twitter.com/intent/tweet?text=${_twitterText}&url=${_twitterUrl}','_blank');this.closest('.canvas-share-wrap').classList.remove('open')">
+            <button class="canvas-share-opt" onclick="window.open('https://twitter.com/intent/tweet?text=${_twitterText}&amp;url=${_twitterUrl}','_blank');this.closest('.canvas-share-wrap').classList.remove('open')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
               Share on Twitter
             </button>
@@ -3436,7 +3436,7 @@ function _renderCanvasWritingProgress(book) {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
               Copy URL
             </button>
-            <button class="canvas-share-opt" onclick="window.open('mailto:?subject=${_emailSubject}&body=${_emailBody}');this.closest('.canvas-share-wrap').classList.remove('open')">
+            <button class="canvas-share-opt" onclick="window.open('mailto:?subject=${_emailSubject}&amp;body=${_emailBody}');this.closest('.canvas-share-wrap').classList.remove('open')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
               Send via Email
             </button>
@@ -3470,7 +3470,7 @@ function _renderCanvasWritingProgress(book) {
             Share
           </button>
           <div class="canvas-share-popup">
-            <button class="canvas-share-opt" onclick="window.open('https://twitter.com/intent/tweet?text=${_twitterText}&url=${_twitterUrl}','_blank');this.closest('.canvas-share-wrap').classList.remove('open')">
+            <button class="canvas-share-opt" onclick="window.open('https://twitter.com/intent/tweet?text=${_twitterText}&amp;url=${_twitterUrl}','_blank');this.closest('.canvas-share-wrap').classList.remove('open')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
               Share on Twitter
             </button>
@@ -3478,7 +3478,7 @@ function _renderCanvasWritingProgress(book) {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
               Copy URL
             </button>
-            <button class="canvas-share-opt" onclick="window.open('mailto:?subject=${_emailSubject}&body=${_emailBody}');this.closest('.canvas-share-wrap').classList.remove('open')">
+            <button class="canvas-share-opt" onclick="window.open('mailto:?subject=${_emailSubject}&amp;body=${_emailBody}');this.closest('.canvas-share-wrap').classList.remove('open')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
               Send via Email
             </button>
@@ -4394,7 +4394,7 @@ async function renderReader(agentId) {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
         </button>
         <div class="reader-topbar-share-popup">
-          <button type="button" class="reader-topbar-share-opt" onclick="window.open('https://twitter.com/intent/tweet?text=${_rTweetText}&url=${_rTweetUrl}','_blank');this.closest('.reader-topbar-share-wrap').classList.remove('open')">
+          <button type="button" class="reader-topbar-share-opt" onclick="window.open('https://twitter.com/intent/tweet?text=${_rTweetText}&amp;url=${_rTweetUrl}','_blank');this.closest('.reader-topbar-share-wrap').classList.remove('open')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
             Post on X
           </button>
