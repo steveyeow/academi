@@ -1,4 +1,4 @@
-"""Generate Open Graph / Twitter Card images styled as book covers."""
+"""Generate Open Graph / Twitter Card images matching the reader cover aesthetic."""
 from __future__ import annotations
 
 import io
@@ -11,16 +11,12 @@ _FONTS_DIR = Path(__file__).resolve().parent.parent / "static" / "fonts"
 
 W, H = 1200, 630
 
-# Book-cover palette
-COVER_BG = (42, 40, 38)
-INNER_BG = (250, 246, 240)
-SPINE_COLOR = (90, 75, 62)
-ACCENT = (139, 109, 82)
-GOLD = (185, 160, 120)
-TEXT_DARK = (29, 29, 31)
-TEXT_MID = (100, 90, 80)
-TEXT_LIGHT = (155, 145, 132)
-RULE_COLOR = (200, 188, 172)
+BG = (30, 28, 26)
+TEXT_PRIMARY = (240, 236, 228)
+TEXT_SECONDARY = (170, 164, 152)
+TEXT_MUTED = (120, 114, 104)
+ACCENT = (185, 160, 120)
+RULE = (65, 60, 52)
 
 
 def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
@@ -48,24 +44,16 @@ def _wrap(text: str, font, max_w: int, draw: ImageDraw.ImageDraw) -> list[str]:
 
 
 def _text_centered(draw: ImageDraw.ImageDraw, y: int, text: str, font, fill,
-                    region_left: int = 0, region_right: int = W) -> int:
+                    left: int, right: int) -> int:
     bbox = draw.textbbox((0, 0), text, font=font)
     tw = bbox[2] - bbox[0]
-    cx = region_left + (region_right - region_left - tw) // 2
+    th = bbox[3] - bbox[1]
+    cx = left + (right - left - tw) // 2
     draw.text((cx, y), text, fill=fill, font=font)
-    return bbox[3] - bbox[1]
+    return th
 
 
-def _draw_ornament(draw: ImageDraw.ImageDraw, cx: int, cy: int, width: int, color):
-    """Small decorative diamond + line ornament."""
-    hw = width // 2
-    draw.line([(cx - hw, cy), (cx - 8, cy)], fill=color, width=1)
-    draw.line([(cx + 8, cy), (cx + hw, cy)], fill=color, width=1)
-    d = 4
-    draw.polygon([(cx, cy - d), (cx + d, cy), (cx, cy + d), (cx - d, cy)], fill=color)
-
-
-def _draw_logo(draw: ImageDraw.ImageDraw, cx: int, cy: int, s: float, color):
+def _draw_feynman_mark(draw: ImageDraw.ImageDraw, cx: int, cy: int, s: float, color):
     lw = max(2, round(2.5 * s))
     draw.line([(cx - 18 * s, cy + 20 * s), (cx, cy)], fill=color, width=lw)
     draw.line([(cx + 18 * s, cy + 20 * s), (cx, cy)], fill=color, width=lw)
@@ -88,107 +76,93 @@ def generate_og_image(
     total_words: int = 0,
     author: str = "",
 ) -> bytes:
-    img = Image.new("RGB", (W, H), COVER_BG)
+    img = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(img)
 
-    # --- Book spine on the left edge ---
-    spine_w = 28
-    draw.rectangle([(0, 0), (spine_w, H)], fill=SPINE_COLOR)
-    # Spine highlight
-    draw.line([(spine_w - 1, 0), (spine_w - 1, H)], fill=GOLD, width=1)
-
-    # --- Inner cover area ---
-    margin = 12
-    inner_l = spine_w + margin
-    inner_t = margin
-    inner_r = W - margin
-    inner_b = H - margin
-    draw.rectangle([(inner_l, inner_t), (inner_r, inner_b)], fill=INNER_BG)
-
-    # Subtle inner border
-    draw.rectangle([(inner_l, inner_t), (inner_r, inner_b)], outline=RULE_COLOR, width=1)
-
-    content_l = inner_l + 60
-    content_r = inner_r - 60
+    pad_x = 80
+    content_l = pad_x
+    content_r = W - pad_x
     content_w = content_r - content_l
-    cover_cx = inner_l + (inner_r - inner_l) // 2
+    cx = W // 2
 
-    # --- Fonts ---
-    ft = _font("Georgia-Bold.ttf", 52)
-    fs = _font("Georgia-Regular.ttf", 20)
-    fm = _font("Arial-Regular.ttf", 14)
-    fi = _font("Georgia-Regular.ttf", 12)
-    fa = _font("Georgia-Regular.ttf", 16)
+    ft_title = _font("Georgia-Bold.ttf", 48)
+    ft_sub = _font("Georgia-Regular.ttf", 20)
+    ft_author = _font("Georgia-Regular.ttf", 18)
+    ft_meta = _font("Arial-Regular.ttf", 14)
+    ft_brand = _font("Georgia-Regular.ttf", 13)
 
-    # --- Top accent band ---
-    band_y = inner_t + 36
-    band_h = 3
-    draw.rectangle([(content_l + 40, band_y), (content_r - 40, band_y + band_h)], fill=ACCENT)
+    # --- Layout: compute heights to vertically center the content block ---
+    title_lines = _wrap(title, ft_title, content_w, draw)[:3]
+    title_line_h = 62
+    block_h = len(title_lines) * title_line_h
 
-    # --- Title (hero element) ---
-    title_lines = _wrap(title, ft, content_w, draw)[:3]
-    line_h = 68
-    total_title_h = len(title_lines) * line_h
+    if subtitle:
+        sub_lines = _wrap(subtitle, ft_sub, content_w - 40, draw)[:2]
+        block_h += 16 + len(sub_lines) * 28
+    else:
+        sub_lines = []
 
-    # Vertically center the title block in the upper 60% of the inner area
-    title_zone_top = inner_t + 70
-    title_zone_bot = inner_b - 180
-    title_start_y = title_zone_top + (title_zone_bot - title_zone_top - total_title_h) // 2
-    title_start_y = max(title_start_y, title_zone_top)
+    block_h += 32  # gap before author
+    if author:
+        block_h += 24
+    block_h += 28  # gap before stats
+    block_h += 18  # stats line
 
-    for i, ln in enumerate(title_lines):
-        _text_centered(draw, title_start_y + i * line_h, ln, ft, TEXT_DARK,
-                        content_l, content_r)
-    cur_y = title_start_y + len(title_lines) * line_h
+    # Center the block vertically with slight upward bias
+    top_y = max(50, (H - block_h) // 2 - 20)
+    cur_y = top_y
+
+    # --- Title ---
+    for ln in title_lines:
+        _text_centered(draw, cur_y, ln, ft_title, TEXT_PRIMARY, content_l, content_r)
+        cur_y += title_line_h
 
     # --- Subtitle ---
-    if subtitle:
-        cur_y += 10
-        sub_lines = _wrap(subtitle, fs, content_w - 80, draw)[:2]
-        for i, ln in enumerate(sub_lines):
-            _text_centered(draw, cur_y + i * 30, ln, fs, TEXT_MID,
-                            content_l, content_r)
-        cur_y += len(sub_lines) * 30
+    if sub_lines:
+        cur_y += 16
+        for ln in sub_lines:
+            _text_centered(draw, cur_y, ln, ft_sub, TEXT_SECONDARY, content_l, content_r)
+            cur_y += 28
 
-    # --- Ornament separator ---
-    cur_y += 20
-    _draw_ornament(draw, cover_cx, cur_y, 120, GOLD)
+    # --- Author ---
+    cur_y += 32
+    if author:
+        _text_centered(draw, cur_y, author, ft_author, TEXT_SECONDARY, content_l, content_r)
+        cur_y += 24
 
-    # --- Meta line (chapters + words) ---
+    # --- Stats line (chapters · words · read time) ---
+    cur_y += 28
     parts = []
-    if chapter_count:
-        parts.append(f"{chapter_count} chapters")
     if total_words:
         parts.append(f"{total_words:,} words")
+    read_min = max(1, round(total_words / 230)) if total_words else 0
+    if read_min:
+        parts.append(f"~{read_min} min read")
+    if chapter_count:
+        parts.append(f"{chapter_count} chapters")
     if parts:
-        cur_y += 22
-        _text_centered(draw, cur_y, "  \u00b7  ".join(parts), fm, TEXT_LIGHT,
-                        content_l, content_r)
+        stats_text = "  \u00b7  ".join(parts)
+        _text_centered(draw, cur_y, stats_text, ft_meta, TEXT_MUTED, content_l, content_r)
 
-    # --- Bottom section: accent line + byline + publisher ---
-    bot_rule_y = inner_b - 100
-    draw.line([(content_l + 80, bot_rule_y), (content_r - 80, bot_rule_y)],
-              fill=RULE_COLOR, width=1)
+    # --- Accent rule above the branding ---
+    rule_y = H - 74
+    rule_hw = 50
+    draw.line([(cx - rule_hw, rule_y), (cx + rule_hw, rule_y)], fill=ACCENT, width=2)
 
-    byline_y = bot_rule_y + 14
-    byline = f"by {author}" if author else "Written by AI"
-    _text_centered(draw, byline_y, byline, fa, TEXT_MID,
-                    content_l, content_r)
-
-    # Feynman publisher imprint: logo + text on the same line
-    imprint_y = inner_b - 38
-    imprint_text = "FEYNMAN"
-    ibbox = draw.textbbox((0, 0), imprint_text, font=fi)
-    iw = ibbox[2] - ibbox[0]
-    ih = ibbox[3] - ibbox[1]
-    logo_s = 0.55
-    logo_total_w = 36 * logo_s
-    gap = 6
-    group_w = logo_total_w + gap + iw
-    group_x = cover_cx - group_w // 2
-    _draw_logo(draw, int(group_x + logo_total_w // 2), imprint_y - 4, logo_s, TEXT_LIGHT)
-    draw.text((int(group_x + logo_total_w + gap), imprint_y - ih // 2), imprint_text,
-              fill=TEXT_LIGHT, font=fi)
+    # --- Feynman brand mark + text ---
+    brand_y = H - 44
+    brand_text = "FEYNMAN"
+    bbbox = draw.textbbox((0, 0), brand_text, font=ft_brand)
+    bw = bbbox[2] - bbbox[0]
+    bh = bbbox[3] - bbbox[1]
+    logo_s = 0.5
+    logo_w = 36 * logo_s
+    gap = 8
+    group_w = logo_w + gap + bw
+    gx = cx - group_w // 2
+    _draw_feynman_mark(draw, int(gx + logo_w // 2), brand_y - 2, logo_s, TEXT_MUTED)
+    draw.text((int(gx + logo_w + gap), brand_y - bh // 2), brand_text,
+              fill=TEXT_MUTED, font=ft_brand)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
