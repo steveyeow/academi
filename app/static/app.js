@@ -4385,20 +4385,21 @@ async function renderReader(agentId) {
       </div>` : '';
   const previewLabel = isPreview ? `<span class="reader-cover-preview-label">Preview</span>` : '';
   const chapterCount = isAI ? d.chapters?.length : (detectedChapters?.length || 0);
-  const _rShareUrl = `${window.location.origin}/share/${esc(agentId)}`;
+  const _rShareUrl = `${window.location.origin}/share/${encodeURIComponent(agentId)}`;
   const _rTweetText = encodeURIComponent(`${d.title} — written by AI on Feynman`);
   const _rTweetUrl = encodeURIComponent(_rShareUrl);
+  const _rTweetIntentUrl = `https://twitter.com/intent/tweet?text=${_rTweetText}&url=${_rTweetUrl}`;
   const _rTopbarShareHtml = isAI ? `
       <div class="reader-topbar-share-wrap">
-        <button type="button" class="reader-topbar-share-trigger" aria-label="Share" onclick="event.stopPropagation();this.parentElement.classList.toggle('open')" title="Share">
+        <button type="button" class="reader-topbar-share-trigger" aria-label="Share" title="Share">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
         </button>
         <div class="reader-topbar-share-popup">
-          <button type="button" class="reader-topbar-share-opt" onclick="window.open('https://twitter.com/intent/tweet?text=${_rTweetText}&amp;url=${_rTweetUrl}','_blank');this.closest('.reader-topbar-share-wrap').classList.remove('open')">
+          <button type="button" class="reader-topbar-share-opt reader-share-x">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
             Post on X
           </button>
-          <button type="button" class="reader-topbar-share-opt" onclick="navigator.clipboard.writeText('${_rShareUrl}');_showToast('Link copied');this.closest('.reader-topbar-share-wrap').classList.remove('open')">
+          <button type="button" class="reader-topbar-share-opt reader-share-copy">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
             Copy link
           </button>
@@ -4467,6 +4468,30 @@ async function renderReader(agentId) {
     <div class="reader-progress-bar"><div class="reader-progress-fill" id="reader-progress-fill"></div></div>
   `;
 
+  if (isAI) {
+    const shareWrap = page.querySelector('.reader-topbar-share-wrap');
+    if (shareWrap) {
+      const trig = shareWrap.querySelector('.reader-topbar-share-trigger');
+      if (trig) trig.addEventListener('click', (e) => {
+        e.stopPropagation();
+        shareWrap.classList.toggle('open');
+      });
+      const xBtn = shareWrap.querySelector('.reader-share-x');
+      if (xBtn) xBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.open(_rTweetIntentUrl, '_blank');
+        shareWrap.classList.remove('open');
+      });
+      const copyBtn = shareWrap.querySelector('.reader-share-copy');
+      if (copyBtn) copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(_rShareUrl);
+        _showToast('Link copied');
+        shareWrap.classList.remove('open');
+      });
+    }
+  }
+
   // Paginate: measure content into pages that fit the viewport
   const inner = document.getElementById('reader-page-inner');
   const contentEl = document.getElementById('reader-content');
@@ -4523,7 +4548,7 @@ async function renderReader(agentId) {
         </div>`
       : `<div class="reader-end-page">
           <p>End of book</p>
-          ${isAI ? `<p class="reader-end-subtitle">Enjoyed this book? Use the share control in the top bar, or <button type="button" class="reader-end-copy-link" onclick="event.stopPropagation();navigator.clipboard.writeText('${_rShareUrl}');_showToast('Link copied')">copy link</button></p>` : ''}
+          ${isAI ? `<p class="reader-end-subtitle">Enjoyed this book? Use the share control in the top bar, or <button type="button" class="reader-end-copy-link">copy link</button></p>` : ''}
         </div>`;
     _readerPages.push({ html: endHtml, chNum: -1 });
 
@@ -4602,6 +4627,18 @@ async function renderReader(agentId) {
   document.addEventListener('click', onDocClickShare, true);
   const origCleanup2 = _readerCleanup;
   _readerCleanup = () => { origCleanup2(); document.removeEventListener('click', onDocClickShare, true); };
+
+  function onReaderEndCopyLink(e) {
+    const btn = e.target.closest('.reader-end-copy-link');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    navigator.clipboard.writeText(_rShareUrl);
+    _showToast('Link copied');
+  }
+  page.addEventListener('click', onReaderEndCopyLink);
+  const origCleanup3 = _readerCleanup;
+  _readerCleanup = () => { origCleanup3(); page.removeEventListener('click', onReaderEndCopyLink); };
 
   paginate();
 }
