@@ -86,6 +86,7 @@ def generate_og_image(
     subtitle: str = "",
     chapter_count: int = 0,
     total_words: int = 0,
+    author: str = "",
 ) -> bytes:
     img = Image.new("RGB", (W, H), COVER_BG)
     draw = ImageDraw.Draw(img)
@@ -169,9 +170,9 @@ def generate_og_image(
     draw.line([(content_l + 80, bot_rule_y), (content_r - 80, bot_rule_y)],
               fill=RULE_COLOR, width=1)
 
-    # "Written by AI" byline
     byline_y = bot_rule_y + 14
-    _text_centered(draw, byline_y, "Written by AI", fa, TEXT_MID,
+    byline = f"by {author}" if author else "Written by AI"
+    _text_centered(draw, byline_y, byline, fa, TEXT_MID,
                     content_l, content_r)
 
     # Feynman publisher imprint: logo + text on the same line

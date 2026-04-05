@@ -184,6 +184,19 @@ def _resolve_creator_name(user_id: str) -> str:
             return email.split("@")[0] if email else ""
     return ""
 
+def _resolve_og_author(agent: dict | None, book: dict | None) -> str:
+    """Return author display name for OG images and share pages."""
+    if not agent:
+        return ""
+    meta = agent.get("meta") or {}
+    if agent.get("type") == "ai_book" or meta.get("is_ai_generated"):
+        creator = meta.get("creator_name", "")
+        if not creator or creator == "User":
+            uid = meta.get("creator_user_id") or agent.get("user_id") or ""
+            creator = _resolve_creator_name(uid)
+        return f"{creator} · AI" if creator else "AI"
+    return meta.get("author") or agent.get("source") or ""
+
 def _track_usage(request: Request, action: str, tokens: int = 0) -> None:
     if os.getenv("ENABLE_AUTH"):
         from .pro.quota import track_usage
@@ -782,36 +795,6 @@ The project draws inspiration from Richard Feynman's approach to learning:
     return PlainTextResponse(content, media_type="text/plain; charset=utf-8")
 
 
-def _og_image_response(agent_id: str):
-    """PNG bytes for Open Graph / Twitter cards (shared by /share/og-image and /api/og-image)."""
-    from fastapi.responses import Response
-    from .core.og_image import generate_og_image
-
-    agent = get_agent(agent_id)
-    book = get_ai_book_by_agent(agent_id) if agent else None
-    title = book["title"] if book and book.get("title") else (agent["name"] if agent else "Untitled")
-    outline = book.get("outline") if book else None
-    subtitle = outline.get("subtitle", "") if isinstance(outline, dict) else ""
-    chapter_count = len(outline.get("chapters", [])) if isinstance(outline, dict) else 0
-    total_words = book.get("total_words", 0) if book else 0
-
-    png_bytes = generate_og_image(
-        title=title,
-        subtitle=subtitle,
-        chapter_count=chapter_count,
-        total_words=total_words,
-    )
-    return Response(content=png_bytes, media_type="image/png", headers={
-        "Cache-Control": "public, max-age=86400",
-    })
-
-
-@app.get("/share/og-image/{agent_id}")
-def share_og_image(agent_id: str):
-    """OG image under /share/ so crawlers are not affected by robots Disallow: /api/."""
-    return _og_image_response(agent_id)
-
-
 @app.get("/share/{agent_id}", response_class=HTMLResponse)
 def share_page(agent_id: str) -> HTMLResponse:
     """Serve a lightweight page with OG/Twitter meta tags for social sharing.
@@ -827,14 +810,20 @@ def share_page(agent_id: str) -> HTMLResponse:
     book = get_ai_book_by_agent(agent_id) if agent else None
     title = html_esc(book["title"] if book and book.get("title") else (agent["title"] if agent else "Untitled"))
     outline = book.get("outline") if book else None
-    subtitle = html_esc(outline.get("subtitle", "") if isinstance(outline, dict) else "")
+    subtitle_raw = outline.get("subtitle", "") if isinstance(outline, dict) else ""
     chapter_count = len(outline.get("chapters", [])) if isinstance(outline, dict) else 0
-    desc = html_esc(subtitle or f"A {chapter_count}-chapter book created with Feynman AI")
+    author_raw = _resolve_og_author(agent, book)
+    if subtitle_raw:
+        desc = html_esc(subtitle_raw)
+    elif author_raw:
+        desc = html_esc(f"by {author_raw} — A {chapter_count}-chapter book on feynman.wiki")
+    else:
+        desc = html_esc(f"A {chapter_count}-chapter book on feynman.wiki")
     base = _SITE_URL
     id_path = quote(agent_id, safe="")
     reader_url = f"{base}/#/read/{id_path}"
     v = config.OG_IMAGE_CACHE_VERSION
-    og_image_url = f"{base}/share/og-image/{id_path}?v={v}"
+    og_image_url = f"{base}/api/og-image/{id_path}?v={v}"
     share_canonical = f"{base}/share/{id_path}"
 
     # JSON-escape for use inside <script> (human redirect only; crawlers do not run JS)
@@ -868,8 +857,29 @@ def share_page(agent_id: str) -> HTMLResponse:
 
 @app.get("/api/og-image/{agent_id}")
 def api_og_image(agent_id: str):
-    """Legacy OG image URL; prefer /share/og-image/ for social crawlers (robots)."""
-    return _og_image_response(agent_id)
+    """Generate a dynamic Open Graph image for a book."""
+    from fastapi.responses import Response
+    from .core.og_image import generate_og_image
+
+    agent = get_agent(agent_id)
+    book = get_ai_book_by_agent(agent_id) if agent else None
+    title = book["title"] if book and book.get("title") else (agent["name"] if agent else "Untitled")
+    outline = book.get("outline") if book else None
+    subtitle = outline.get("subtitle", "") if isinstance(outline, dict) else ""
+    chapter_count = len(outline.get("chapters", [])) if isinstance(outline, dict) else 0
+    total_words = book.get("total_words", 0) if book else 0
+    author = _resolve_og_author(agent, book)
+
+    png_bytes = generate_og_image(
+        title=title,
+        subtitle=subtitle,
+        chapter_count=chapter_count,
+        total_words=total_words,
+        author=author,
+    )
+    return Response(content=png_bytes, media_type="image/png", headers={
+        "Cache-Control": "public, max-age=86400",
+    })
 
 
 @app.get("/api/health")
