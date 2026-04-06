@@ -57,6 +57,7 @@ from .core.db import (
     create_ai_book,
     get_ai_book,
     get_ai_book_by_agent,
+    get_ai_book_status,
     get_chunks,
     list_ai_books,
     update_ai_book_outline,
@@ -1941,6 +1942,18 @@ def api_ai_book_get(
             creator = _resolve_creator_name(meta.get("creator_user_id") or agent.get("user_id") or "")
         book["creator_name"] = creator or ""
 
+    return book
+
+
+@app.get("/api/ai-books/{book_id}/status")
+def api_ai_book_status(book_id: str, request: Request) -> dict[str, Any]:
+    """Lightweight status endpoint for polling — no content_json."""
+    user_id = _get_user_id(request) or "anon"
+    book = get_ai_book_status(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="AI book not found")
+    if book["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return book
 
 

@@ -1740,7 +1740,7 @@ function startPolling() {
     await loadAgents();
     const r = getRoute();
     if (r.page === 'library') renderLibraryGrid();
-  }, 5000);
+  }, 15000);
 }
 function ensurePolling() {
   if (agents.some(a => a.status === 'indexing')) startPolling();
@@ -3412,6 +3412,8 @@ function _renderWritingProgress(book) {
     if (chData && chData.content) {
       stateClass = 'done'; icon = '✓'; detail = 'Completed';
       words = `${(chData.word_count || 0).toLocaleString()} words`;
+    } else if (c.number <= written) {
+      stateClass = 'done'; icon = '✓'; detail = 'Completed';
     } else if (isCancelled) {
       stateClass = 'pending'; icon = '—'; detail = 'Cancelled';
     } else if (written + 1 === c.number || (written === 0 && c.number === 1 && book.status === 'writing')) {
@@ -3487,6 +3489,8 @@ function _renderCanvasWritingProgress(book) {
     if (chData && chData.content) {
       stateClass = 'done'; icon = '✓'; detail = 'Completed';
       words = `${(chData.word_count || 0).toLocaleString()} words`;
+    } else if (c.number <= written) {
+      stateClass = 'done'; icon = '✓'; detail = 'Completed';
     } else if (isCancelled) {
       stateClass = 'pending'; icon = '—'; detail = 'Cancelled';
     } else if (written + 1 === c.number || (written === 0 && c.number === 1 && book.status === 'writing')) {
@@ -3765,7 +3769,7 @@ function _startWritingPoll(bookId, chatBox) {
       return;
     }
     try {
-      const book = await api(`/api/ai-books/${bookId}`);
+      const book = await api(`/api/ai-books/${bookId}/status`);
       if (_writeBookId !== bookId || currentSessionId !== _writeBookPollSessionId) {
         _stopWriteBookPolling();
         return;
@@ -3786,7 +3790,7 @@ function _startWritingPoll(bookId, chatBox) {
   }
 
   poll();
-  _writeBookPolling = setInterval(poll, 2000);
+  _writeBookPolling = setInterval(poll, 5000);
 }
 
 function _detectLanguage(text) {

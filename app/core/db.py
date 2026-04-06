@@ -939,7 +939,11 @@ def find_mind_by_name(name: str) -> dict[str, Any] | None:
 
 def list_minds() -> list[dict[str, Any]]:
     with get_conn() as conn:
-        rows = _fetchall(conn, "SELECT * FROM minds ORDER BY chat_count DESC, created_at ASC")
+        rows = _fetchall(conn, (
+            "SELECT id, name, era, domain, bio_summary, persona, thinking_style, "
+            "typical_phrases, works, avatar_seed, version, chat_count, created_at "
+            "FROM minds ORDER BY chat_count DESC, created_at ASC"
+        ))
         return [_row_to_mind(r) for r in rows]
 
 
@@ -981,7 +985,11 @@ def list_minds_with_embeddings() -> list[dict[str, Any]]:
 def list_minds_missing_embeddings() -> list[dict[str, Any]]:
     with get_conn() as conn:
         try:
-            rows = _fetchall(conn, _q("SELECT * FROM minds WHERE embedding IS NULL"))
+            rows = _fetchall(conn, _q(
+                "SELECT id, name, era, domain, bio_summary, persona, thinking_style, "
+                "typical_phrases, works, avatar_seed, version, chat_count, created_at "
+                "FROM minds WHERE embedding IS NULL"
+            ))
             return [_row_to_mind(r) for r in rows]
         except Exception:
             return []
@@ -1342,6 +1350,20 @@ def get_ai_book(book_id: str) -> dict[str, Any] | None:
         if not row:
             return None
         return _row_to_ai_book(row)
+
+
+def get_ai_book_status(book_id: str) -> dict[str, Any] | None:
+    """Lightweight fetch — status/progress only, no content_json."""
+    with get_conn() as conn:
+        row = _fetchone(conn, _q(
+            "SELECT id, agent_id, user_id, status, title, outline_json, "
+            "chapters_total, chapters_written, updated_at FROM ai_books WHERE id = ?"
+        ), (book_id,))
+        if not row:
+            return None
+        result = dict(row)
+        result["outline"] = json.loads(result.pop("outline_json", None) or "{}")
+        return result
 
 
 def get_ai_book_by_agent(agent_id: str) -> dict[str, Any] | None:
