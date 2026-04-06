@@ -26,6 +26,7 @@ let activeMinds = new Map();
 let _mindsJoinedOnce = false;
 let chatSessions = [];
 let currentSessionId = null;
+let _sessionsRestored = false;
 
 // Topic state
 let topicTags = [];
@@ -2209,6 +2210,7 @@ async function restoreSessions() {
   } catch (e) {
     console.warn('Failed to restore sessions from DB:', e);
   }
+  _sessionsRestored = true;
 }
 
 async function createSession(mindId) {
@@ -6373,7 +6375,8 @@ async function renderMindDetail(mindId) {
     return;
   }
 
-  const existingSession = chatSessions.find(s => s.mindId === mindId);
+  let existingSession = chatSessions.find(s => s.id === currentSessionId && s.mindId === mindId);
+  if (!existingSession) existingSession = chatSessions.find(s => s.mindId === mindId);
   if (existingSession) {
     currentSessionId = existingSession.id;
     localStorage.setItem('currentSessionId', currentSessionId);
@@ -6399,6 +6402,10 @@ async function renderMindDetail(mindId) {
         mindChatHistory.push({ role: m.role, content: m.content });
       }
     }
+  } else if (!_sessionsRestored) {
+    // Sessions not yet loaded from DB — skip session creation to avoid duplicates.
+    // The page will re-render after restoreSessions + navigate().
+    return;
   } else {
     const session = await createSession(mindId);
     session.title = `Chat with ${mind.name}`;
@@ -6415,6 +6422,7 @@ async function renderMindDetail(mindId) {
       if (greet?.response) {
         appendMindMsg(chatBox, mind.name, greet.response);
         mindChatHistory.push({ role: 'assistant', content: greet.response });
+        _queueSessionMessage(session.id, 'mind', greet.response, { mindName: mind.name });
         _saveMindSession(chatBox);
       }
     } catch (e) {
@@ -6450,6 +6458,9 @@ async function sendMindChat(mindId, message) {
   if (input) input.value = '';
   showLoading(chatBox);
 
+  const sentSessionId = currentSessionId;
+  _queueSessionMessage(sentSessionId, 'user', message, contextMinds.length ? { contextMinds: contextMinds.map(m => ({ name: m.name })) } : undefined);
+
   const cleanMessage = mentionedNames.length ? stripMentions(message) : message;
   const body = { message: cleanMessage };
   if (mindChatHistory.length) body.history = mindChatHistory;
@@ -6477,6 +6488,8 @@ async function sendMindChat(mindId, message) {
 
     mindChatHistory.push({ role: 'user', content: message });
     mindChatHistory.push({ role: 'assistant', content: data.response });
+
+    _queueSessionMessage(sentSessionId, 'mind', data.response, { mindName });
 
     if (!activeMinds.has(mindId) && mind) {
       activeMinds.set(mindId, { id: mindId, name: mind.name });
