@@ -597,7 +597,11 @@ Allow: /api/og-image/
 
 Sitemap: {_SITE_URL}/sitemap.xml
 """
-    return PlainTextResponse(content, media_type="text/plain; charset=utf-8")
+    return PlainTextResponse(
+        content,
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=86400, s-maxage=86400"},
+    )
 
 
 @app.get("/sitemap")
@@ -642,7 +646,11 @@ def sitemap_xml():
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 {urls}</urlset>"""
-    return Response(content=xml, media_type="application/xml; charset=utf-8")
+    return Response(
+        content=xml,
+        media_type="application/xml; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=3600, s-maxage=86400"},
+    )
 
 
 @app.get("/llms.txt")
@@ -695,7 +703,11 @@ scientists, and practitioners — who automatically join conversations with rele
 
 - [Full LLM context]({_SITE_URL}/llms-full.txt): Comprehensive product documentation for AI systems
 """
-    return PlainTextResponse(content, media_type="text/plain; charset=utf-8")
+    return PlainTextResponse(
+        content,
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=86400, s-maxage=86400"},
+    )
 
 
 @app.get("/llms-full.txt")
@@ -794,7 +806,11 @@ The project draws inspiration from Richard Feynman's approach to learning:
 - Email: support@academiai.app
 - GitHub: https://github.com/steveyeow/feynman
 """
-    return PlainTextResponse(content, media_type="text/plain; charset=utf-8")
+    return PlainTextResponse(
+        content,
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=86400, s-maxage=86400"},
+    )
 
 
 @app.get("/share/{agent_id}", response_class=HTMLResponse)
@@ -885,7 +901,7 @@ def api_og_image(agent_id: str):
         author=author,
     )
     return Response(content=png_bytes, media_type="image/png", headers={
-        "Cache-Control": "public, max-age=86400",
+        "Cache-Control": "public, max-age=86400, s-maxage=604800",
     })
 
 
@@ -897,8 +913,12 @@ def health() -> dict[str, Any]:
 # ─── Topic discovery endpoints ───
 
 @app.get("/api/topics")
-def api_topics() -> dict[str, Any]:
-    return {"topics": TOPIC_TAGS}
+def api_topics():
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content={"topics": TOPIC_TAGS},
+        headers={"Cache-Control": "public, max-age=86400, s-maxage=86400"},
+    )
 
 
 class DiscoverRequest(BaseModel):
@@ -1028,6 +1048,23 @@ def api_cron_embed_minds(request: Request) -> dict[str, Any]:
         return {"status": "error", "detail": str(exc)}
 
 
+@app.get("/api/cron/reset-embeddings")
+def api_cron_reset_embeddings(request: Request) -> dict[str, Any]:
+    """Clear all corrupted embeddings so backfill can regenerate them."""
+    _verify_cron(request)
+    from .core.db import get_conn, _q, _execute
+    try:
+        with get_conn() as conn:
+            _execute(conn, _q("UPDATE minds SET embedding = NULL, embedding_dim = NULL, embedding_norm = NULL"))
+        global _similarities_cache, _similarities_cache_ts
+        _similarities_cache = {}
+        _similarities_cache_ts = 0
+        return {"status": "ok", "message": "All embeddings cleared. Run /api/cron/embed-minds repeatedly to regenerate."}
+    except Exception as exc:
+        log.error("Reset embeddings failed: %s", exc)
+        return {"status": "error", "detail": str(exc)}
+
+
 @app.get("/api/debug/embedding-status")
 def api_debug_embedding_status() -> dict[str, Any]:
     """Diagnostic: check embedding column existence and mind counts.
@@ -1095,13 +1132,17 @@ def pro_config() -> dict[str, Any]:
 # ─── Agent endpoints ───
 
 @app.get("/api/agents")
-def api_list_agents() -> list[dict[str, Any]]:
+def api_list_agents():
+    from fastapi.responses import JSONResponse
     result = list_agents()
     try:
         _enrich_ai_book_agents(result)
     except Exception as exc:
         log.error("Failed to enrich AI book agents: %s", exc)
-    return result
+    return JSONResponse(
+        content=result,
+        headers={"Cache-Control": "public, max-age=30, s-maxage=120"},
+    )
 
 
 def _enrich_ai_book_agents(agents: list[dict[str, Any]]) -> None:
@@ -2093,7 +2134,8 @@ _LAZY_SEED_SIZE = int(os.getenv("LAZY_SEED_SIZE", "1"))
 _embed_backfill_done = False
 
 @app.get("/api/minds")
-def api_list_minds(background_tasks: BackgroundTasks) -> list[dict[str, Any]]:
+def api_list_minds(background_tasks: BackgroundTasks):
+    from fastapi.responses import JSONResponse
     global _embed_backfill_done
     minds = list_minds()
     # Lazy seeding: seed 1 mind per request to stay within Vercel's 10s timeout
@@ -2101,20 +2143,43 @@ def api_list_minds(background_tasks: BackgroundTasks) -> list[dict[str, Any]]:
         seeded = _seed_minds_batch(_LAZY_SEED_SIZE)
         if seeded:
             minds = list_minds()
-    # Lazy embedding backfill: run once per process lifetime
+    # Lazy embedding backfill: only schedule if there's actual work
     if not _embed_backfill_done:
         _embed_backfill_done = True
-        from .core.minds import backfill_mind_embeddings
-        background_tasks.add_task(backfill_mind_embeddings)
+        from .core.db import list_minds_missing_embeddings
+        if list_minds_missing_embeddings():
+            from .core.minds import backfill_mind_embeddings
+            background_tasks.add_task(backfill_mind_embeddings)
     for m in minds:
         m.pop("persona", None)
-    return minds
+    return JSONResponse(
+        content=minds,
+        headers={"Cache-Control": "public, max-age=60, s-maxage=300"},
+    )
 
+
+_similarities_cache: dict[str, Any] = {}
+_similarities_cache_ts: float = 0
+_SIMILARITIES_TTL = 3600  # 1 hour
 
 @app.get("/api/minds/similarities")
-def api_mind_similarities() -> dict[str, Any]:
+def api_mind_similarities():
+    from fastapi.responses import JSONResponse
     from .core.minds import compute_mind_similarities, compute_mind_layout
-    return {"links": compute_mind_similarities(), "layout": compute_mind_layout()}
+    global _similarities_cache, _similarities_cache_ts
+    now = time.monotonic()
+    if _similarities_cache and (now - _similarities_cache_ts) < _SIMILARITIES_TTL:
+        return JSONResponse(
+            content=_similarities_cache,
+            headers={"Cache-Control": "public, max-age=3600, s-maxage=3600"},
+        )
+    result = {"links": compute_mind_similarities(), "layout": compute_mind_layout()}
+    _similarities_cache = result
+    _similarities_cache_ts = now
+    return JSONResponse(
+        content=result,
+        headers={"Cache-Control": "public, max-age=3600, s-maxage=3600"},
+    )
 
 
 @app.get("/api/minds/{mind_id}")

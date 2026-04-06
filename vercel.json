@@ -3,11 +3,13 @@
     { "src": "app/main.py", "use": "@vercel/python", "config": { "maxDuration": 60 } }
   ],
   "routes": [
+    { "src": "/static/(.*)", "dest": "app/static/$1", "headers": { "Cache-Control": "public, max-age=86400, s-maxage=604800" } },
+    { "src": "/favicon.svg", "dest": "app/static/favicon.svg", "headers": { "Cache-Control": "public, max-age=604800" } },
     { "src": "/(.*)", "dest": "app/main.py" }
   ],
   "crons": [
-    { "path": "/api/cron/seed-minds", "schedule": "0 0 * * *" },
-    { "path": "/api/cron/discover", "schedule": "0 6 * * *" },
-    { "path": "/api/cron/embed-minds", "schedule": "0 1 * * *" }
+    { "path": "/api/cron/seed-minds", "schedule": "0 0 * * 1" },
+    { "path": "/api/cron/discover", "schedule": "0 6 * * 3" },
+    { "path": "/api/cron/embed-minds", "schedule": "0 */6 * * *" }
   ]
 }
