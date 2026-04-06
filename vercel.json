@@ -10,6 +10,6 @@
   "crons": [
     { "path": "/api/cron/seed-minds", "schedule": "0 0 * * 1" },
     { "path": "/api/cron/discover", "schedule": "0 6 * * 3" },
-    { "path": "/api/cron/embed-minds", "schedule": "0 */6 * * *" }
+    { "path": "/api/cron/embed-minds", "schedule": "0 0 * * *" }
   ]
 }

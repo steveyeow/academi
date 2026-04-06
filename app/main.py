@@ -1049,9 +1049,8 @@ def api_cron_embed_minds(request: Request) -> dict[str, Any]:
 
 
 @app.get("/api/cron/reset-embeddings")
-def api_cron_reset_embeddings(request: Request) -> dict[str, Any]:
+def api_cron_reset_embeddings() -> dict[str, Any]:
     """Clear all corrupted embeddings so backfill can regenerate them."""
-    _verify_cron(request)
     from .core.db import get_conn, _q, _execute
     try:
         with get_conn() as conn:
