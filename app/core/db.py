@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Iterable
+
+log = logging.getLogger(__name__)
 
 from .config import DB_PATH, DATA_DIR
 
@@ -369,6 +372,9 @@ def init_db() -> None:
                 )
             """)
             _execute(conn, "CREATE INDEX IF NOT EXISTS idx_usage_user_action ON usage(user_id, action, created_at)")
+
+            # Reset sequence to avoid UniqueViolation after DB restores/migrations
+            _execute(conn, "SELECT setval(pg_get_serial_sequence('usage', 'id'), COALESCE((SELECT MAX(id) FROM usage), 0) + 1, false)")
 
             # Cleanup: purge usage records older than 30 days (must run after table creation)
             _execute(conn, "DELETE FROM usage WHERE created_at < NOW() - INTERVAL '30 days'")
@@ -1280,10 +1286,13 @@ def find_user_by_stripe_customer(customer_id: str) -> dict[str, Any] | None:
 
 
 def record_usage(user_id: str, action: str, tokens_used: int = 0) -> None:
-    with get_conn() as conn:
-        _execute(conn, _q("""
-            INSERT INTO usage (user_id, action, tokens_used) VALUES (?, ?, ?)
-        """), (user_id, action, tokens_used))
+    try:
+        with get_conn() as conn:
+            _execute(conn, _q("""
+                INSERT INTO usage (user_id, action, tokens_used) VALUES (?, ?, ?)
+            """), (user_id, action, tokens_used))
+    except Exception as exc:
+        log.warning("Failed to record usage for user=%s action=%s: %s", user_id, action, exc)
 
 
 def count_usage_today(user_id: str, action: str) -> int:

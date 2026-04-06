@@ -400,9 +400,49 @@
               <div id="mind-chat-messages" class="chat-messages"></div>
               <div class="chat-input-area">
                 <div class="chat-composer-inline">
+                  <div class="selected-chips" id="mind-selected-chips"></div>
                   <textarea id="mind-chat-input" class="composer-input" rows="1" placeholder="Ask this mind a question..."></textarea>
                   <div class="composer-toolbar">
-                    <div class="composer-left"></div>
+                    <div class="composer-left">
+                      <button type="button" id="mind-plus-btn" class="composer-icon-btn" title="Books & upload">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      </button>
+                      <input type="file" id="mind-upload-file-input" accept=".txt,.pdf,.epub,.md" multiple hidden />
+                      <div class="composer-popover hidden" id="mind-popover">
+                        <div class="popover-section-label">SELECT BOOKS</div>
+                        <div class="popover-hint">Choose books to ground the conversation.</div>
+                        <input type="text" class="popover-search" id="mind-popover-search" placeholder="Search books..." autocomplete="off" />
+                        <button class="popover-action" id="mind-popover-upload">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                          Upload your book
+                        </button>
+                        <button type="button" class="popover-url-toggle" id="mind-popover-url-toggle" aria-expanded="false" aria-controls="mind-popover-url-panel">
+                          <svg class="popover-url-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                          <span>Import from web page</span>
+                        </button>
+                        <div id="mind-popover-url-panel" class="popover-url-panel hidden" role="region" aria-label="Import from URL">
+                          <div class="popover-url-row">
+                            <input type="url" id="mind-popover-url-input" class="popover-url-input" placeholder="https://…" autocomplete="off" />
+                            <button type="button" id="mind-popover-url-import" class="popover-url-import-btn">Import</button>
+                          </div>
+                          <p class="popover-url-hint-micro">Open the page that has the text (article or transcript). <span class="popover-url-info" tabindex="0" title="Use the exact URL of the passage you want—not the site home or a topic list. Only this one page is fetched; links on the page are not followed.">?</span></p>
+                        </div>
+                        <div class="popover-divider"></div>
+                        <div id="mind-popover-book-list" class="popover-book-list"></div>
+                        <div id="mind-popover-no-books" class="popover-empty">No books in library</div>
+                      </div>
+                      <button type="button" id="mind-minds-btn" class="composer-icon-btn composer-minds-btn" title="Invite great minds to discuss">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="8" r="2.5"/><circle cx="8" cy="18" r="2.5"/><circle cx="18" cy="18" r="2"/><line x1="8.2" y1="7.2" x2="15.8" y2="7.2"/><line x1="7" y1="8.3" x2="7.5" y2="15.5"/><line x1="10.2" y1="17.2" x2="16" y2="17.8"/><line x1="16.5" y1="10.3" x2="17.5" y2="16"/></svg>
+                      </button>
+                      <div class="composer-popover hidden" id="mind-minds-popover">
+                        <div class="popover-section-label">INVITE GREAT MINDS</div>
+                        <div class="popover-pro-row"><button class="popover-pro-badge" id="mind-minds-pro-badge"><span class="popover-pro-label">Pro</span> Upgrade</button></div>
+                        <div class="popover-hint">Invite more minds to join the discussion.</div>
+                        <input type="text" class="popover-search" id="mind-minds-search" placeholder="Search minds..." autocomplete="off" />
+                        <div id="mind-popover-mind-list" class="popover-mind-list"></div>
+                        <div id="mind-popover-no-minds" class="popover-empty">No minds yet</div>
+                      </div>
+                    </div>
                     <button type="button" id="mind-send-btn" class="composer-send-btn" title="Send">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
                     </button>
@@ -463,6 +503,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-    <script src="/static/app.js?v=106"></script>
+    <script src="/static/app.js?v=107"></script>
   </body>
 </html>

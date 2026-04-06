@@ -2310,6 +2310,26 @@ def api_mind_chat(mind_id: str, payload: MindChatRequest, request: Request, back
     return result
 
 
+@app.post("/api/minds/{mind_id}/greet")
+def api_mind_greet(mind_id: str, request: Request) -> dict[str, Any]:
+    """Generate a short in-character greeting from a mind agent."""
+    mind = get_mind(mind_id)
+    if not mind:
+        raise HTTPException(status_code=404, detail="Mind not found")
+    uid = _get_user_id(request)
+    try:
+        result = mind_chat(
+            mind,
+            "Please introduce yourself briefly. Greet the user warmly and invite them to discuss topics in your area of expertise. Keep it to 2-3 sentences.",
+            user_id=uid,
+            brief=True,
+        )
+    except ProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    _track_usage(request, "mind_chat")
+    return result
+
+
 @app.post("/api/minds/panel-chat")
 def api_panel_chat(payload: PanelChatRequest, request: Request, background_tasks: BackgroundTasks) -> dict[str, Any]:
     _check_quota(request, "mind_chat")

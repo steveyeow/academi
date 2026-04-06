@@ -2582,11 +2582,12 @@ function showMindJoinPrompt(chatBox, mindNames, inviteGen) {
   });
 }
 
-async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targetMindNames) {
+async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targetMindNames, excludeMindId) {
   const sessionId = currentSessionId;
   const renderGenAtStart = _chatRenderGen;
   const inviteGen = ++_mindsInviteGen;
   const autoAddedMindIds = [];
+  const onMindPage = getRoute().page === 'mind';
 
   try {
     const mindIds = [...activeMinds.keys()];
@@ -2595,7 +2596,7 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
     }
 
     const hasMentions = targetMindNames && targetMindNames.length > 0;
-    const skipSuggest = hasMentions || (!isProUser() && _mindsInvitedOnce);
+    const skipSuggest = hasMentions || onMindPage || (!isProUser() && _mindsInvitedOnce);
 
     const allKnownNames = [...activeMinds.values(), ...selectedMinds.values()].map(m => m.name);
     const suggestCount = Math.floor(Math.random() * 3) + 1;
@@ -2712,7 +2713,9 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
     });
 
     const cleanMessage = hasMentions ? stripMentions(message) : message;
-    const panelBody = { message: cleanMessage, mind_ids: mindIds, history };
+    const panelMindIds = excludeMindId ? mindIds.filter(id => id !== excludeMindId) : mindIds;
+    if (!panelMindIds.length) return;
+    const panelBody = { message: cleanMessage, mind_ids: panelMindIds, history };
     if (bookContext?.length) panelBody.book_context = bookContext;
     if (agentIds?.length) panelBody.agent_ids = agentIds;
     if (invitedMindIds.length) panelBody.invited_mind_ids = invitedMindIds;
@@ -2752,10 +2755,10 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
         }
       }
 
-      // Check if user is still viewing the same chat
+      const currentPage = getRoute().page;
       const stillOnSamePage = currentSessionId === sessionId
         && _chatRenderGen === renderGenAtStart
-        && getRoute().page === 'chat';
+        && (currentPage === 'chat' || currentPage === 'mind');
 
       if (stillOnSamePage) {
         if (joinedRespondedNames.length) {
@@ -2764,11 +2767,14 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
         for (const r of panelData.responses) {
           if (r.response && !r.response.startsWith('[')) {
             appendMindMsg(chatBox, r.mind_name, r.response);
+            if (onMindPage) {
+              mindChatHistory.push({ role: 'assistant', content: `[${r.mind_name}]: ${r.response}` });
+            }
           }
         }
-      } else if (currentSessionId === sessionId && getRoute().page === 'chat') {
-        // User left and came back to the same session — re-render to show new messages
-        onChatPageShow();
+        if (onMindPage) _saveMindSession(chatBox);
+      } else if (currentSessionId === sessionId && (currentPage === 'chat' || currentPage === 'mind')) {
+        if (currentPage === 'chat') onChatPageShow();
       }
       _mindsInvitedOnce = true;
       loadMinds();
@@ -4351,7 +4357,7 @@ function renderPopoverMindList(listId, emptyId) {
 
 // Renders chips in BOTH home and chat composers + updates placeholder
 function renderSelectedChips() {
-  ['home-selected-chips', 'chat-selected-chips'].forEach(cId => {
+  ['home-selected-chips', 'chat-selected-chips', 'mind-selected-chips'].forEach(cId => {
     const c = document.getElementById(cId);
     if (!c) return;
     if (!selectedBooks.size && !selectedMinds.size) { c.innerHTML = ''; return; }
@@ -4384,6 +4390,13 @@ function renderSelectedChips() {
       ? (selectedMinds.size ? 'Ask your question... Type @ to mention a mind' : 'Ask your question...')
       : 'Ask about books or topics — great minds will join in...';
   }
+  const mindInput = document.getElementById('mind-chat-input');
+  if (mindInput) {
+    const hasContext = selectedBooks.size || selectedMinds.size;
+    mindInput.placeholder = hasContext
+      ? (selectedMinds.size ? 'Ask this mind a question... Type @ to mention a mind' : 'Ask this mind a question...')
+      : 'Ask this mind a question...';
+  }
   // Re-render starters to match selected books
   if (getRoute().page === 'home') renderStarters();
 }
@@ -4391,10 +4404,12 @@ function renderSelectedChips() {
 function _updateComposerMentionHint() {
   const hasMinds = activeMinds.size > 0 || selectedMinds.size > 0;
   const hint = hasMinds ? 'Type @ to mention a mind' : '';
-  ['chat-input', 'book-chat-input'].forEach(id => {
+  ['chat-input', 'book-chat-input', 'mind-chat-input'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
-    const base = id === 'chat-input' ? 'Ask a follow-up question...' : 'Ask about this book...';
+    const base = id === 'chat-input' ? 'Ask a follow-up question...'
+      : id === 'mind-chat-input' ? 'Ask this mind a question...'
+      : 'Ask about this book...';
     el.placeholder = hasMinds ? `${base} ${hint}` : base;
   });
 }
@@ -6319,7 +6334,10 @@ async function renderMindDetail(mindId) {
   chatBox.innerHTML = '';
   mindChatHistory = [];
   activeMinds.clear();
+  selectedBooks.clear();
+  selectedMinds.clear();
   _mindsInvitedOnce = false;
+  renderSelectedChips();
 
   let mind = allMinds.find(m => m.id === mindId);
   if (!mind) {
@@ -6364,6 +6382,20 @@ async function renderMindDetail(mindId) {
       body: JSON.stringify({ title: session.title }),
     }).catch(() => {});
     renderChatHistory();
+
+    showLoading(chatBox);
+    try {
+      const greet = await api('/api/minds/' + mindId + '/greet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      removeLoading();
+      if (greet?.response) {
+        appendMindMsg(chatBox, mind.name, greet.response);
+        mindChatHistory.push({ role: 'assistant', content: greet.response });
+        _saveMindSession(chatBox);
+      }
+    } catch (e) {
+      removeLoading();
+      console.warn('Mind greeting failed:', e);
+    }
   }
 
   const color = mindColor(mind.name);
@@ -6425,7 +6457,10 @@ async function sendMindChat(mindId, message) {
     }
 
     _saveMindSession(chatBox);
-    _inviteMindsToChat(chatBox, message, bookContext, agentIds, mentionedNames);
+    const hasExtraMinds = selectedMinds.size > 0 || mentionedNames.length > 0;
+    if (hasExtraMinds) {
+      _inviteMindsToChat(chatBox, message, bookContext, agentIds, mentionedNames, mindId);
+    }
   } catch (err) {
     removeLoading();
     appendMsg(chatBox, 'assistant', 'Error: ' + err.message);
@@ -6914,6 +6949,39 @@ function bindComposerControls() {
   document.getElementById('mind-send-btn').addEventListener('click', () => {
     const msg = mindInput.value.trim();
     if (msg && currentMindId) { mindInput.value = ''; sendMindChat(currentMindId, msg); }
+  });
+
+  // Mind + button → books popover
+  const mindPlusBtn = document.getElementById('mind-plus-btn');
+  const mindUploadInput = document.getElementById('mind-upload-file-input');
+  mindPlusBtn.addEventListener('click', e => { e.stopPropagation(); togglePopover('mind-popover', 'mind-popover-book-list', 'mind-popover-no-books'); });
+  document.getElementById('mind-popover-upload').addEventListener('click', () => { closeAllPopovers(); mindUploadInput.click(); });
+  mindUploadInput.addEventListener('change', () => { if (mindUploadInput.files.length) { handleFileUpload(mindUploadInput.files); mindUploadInput.value = ''; } });
+  const mindUrlInput = document.getElementById('mind-popover-url-input');
+  document.getElementById('mind-popover-url-import').addEventListener('click', () => handleUploadFromUrl(mindUrlInput.value, mindUrlInput));
+  mindUrlInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); handleUploadFromUrl(mindUrlInput.value, mindUrlInput); }
+  });
+  document.getElementById('mind-popover-url-toggle').addEventListener('click', e => {
+    e.stopPropagation();
+    const panel = document.getElementById('mind-popover-url-panel');
+    const toggle = document.getElementById('mind-popover-url-toggle');
+    const willOpen = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', !willOpen);
+    toggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    if (willOpen) requestAnimationFrame(() => mindUrlInput.focus());
+  });
+  document.getElementById('mind-popover-search').addEventListener('input', () => {
+    renderPopoverBookList('mind-popover-book-list', 'mind-popover-no-books');
+  });
+
+  // Mind minds button → minds popover
+  document.getElementById('mind-minds-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    toggleMindPopover('mind-minds-popover', 'mind-popover-mind-list', 'mind-popover-no-minds');
+  });
+  document.getElementById('mind-minds-search').addEventListener('input', () => {
+    renderPopoverMindList('mind-popover-mind-list', 'mind-popover-no-minds');
   });
 }
 
