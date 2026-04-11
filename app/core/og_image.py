@@ -234,14 +234,28 @@ def generate_mind_og_image(
             _text_centered(draw, ty, ln, ft_tag, TEXT_LIGHT, 120, W - 120)
             ty += 28
 
+    ft_cta = _font("Georgia-Regular.ttf", 16)
+    cta_text = f"Chat with {name} on Feynman"
+    cta_lines = _wrap(cta_text, ft_cta, W - 300, draw)[:1]
+    cta_y = H - 90
+    for ln in cta_lines:
+        _text_centered(draw, cta_y, ln, ft_cta, ACCENT, 100, W - 100)
+
     imp_y = H - 40
-    _draw_feynman_mark(draw, W // 2 - 30, imp_y, 0.4, TEXT_LIGHT)
     ft_mark = _font("Georgia-Regular.ttf", 11)
-    mbbox = draw.textbbox((0, 0), "FEYNMAN  GREAT MINDS", font=ft_mark)
+    mark_label = "FEYNMAN  GREAT MINDS"
+    mbbox = draw.textbbox((0, 0), mark_label, font=ft_mark)
     mw = mbbox[2] - mbbox[0]
+    mh = mbbox[3] - mbbox[1]
+    mark_scale = 0.4
+    mark_w = round(36 * mark_scale)
+    gap = 6
+    total_w = mark_w + gap + mw
+    start_x = (W - total_w) // 2
+    _draw_feynman_mark(draw, start_x + mark_w // 2, imp_y, mark_scale, TEXT_LIGHT)
     draw.text(
-        (W // 2 - mw // 2 + 8, imp_y - (mbbox[3] - mbbox[1]) // 2),
-        "FEYNMAN  GREAT MINDS", fill=TEXT_LIGHT, font=ft_mark,
+        (start_x + mark_w + gap, imp_y - mh // 2),
+        mark_label, fill=TEXT_LIGHT, font=ft_mark,
     )
 
     buf = io.BytesIO()
