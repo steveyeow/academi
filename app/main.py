@@ -964,9 +964,20 @@ def book_page(agent_id: str) -> HTMLResponse:
         "publisher": {"@type": "Organization", "name": "Feynman", "url": base},
     }, ensure_ascii=False)
 
+    read_time = max(1, (total_words or 0) // 250)
+    stats_parts = []
+    if total_words:
+        stats_parts.append(f"{total_words:,} words")
+    if read_time:
+        stats_parts.append(f"~{read_time} min read")
+    if chapter_count:
+        stats_parts.append(f"{chapter_count} chapters")
+    stats_html = " · ".join(stats_parts)
+
     html = f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title} — Feynman</title>
 <meta name="description" content="{desc}">
 <link rel="canonical" href="{canonical}">
@@ -985,12 +996,11 @@ def book_page(agent_id: str) -> HTMLResponse:
 <script type="application/ld+json">{jsonld}</script>
 </head><body>
 <h1>{title}</h1>
-{f'<p>{desc}</p>' if desc else ''}
 {f'<p>by {html_esc(author_raw)}</p>' if author_raw else ''}
+{f'<p>{desc}</p>' if subtitle_raw else ''}
 {toc_html}
-<p><a href="{html_esc(reader_url)}">Read and chat with this book on Feynman →</a></p>
-<script>window.location.replace({reader_js});</script>
-<noscript><p><a href="{html_esc(reader_url)}">Continue to the book</a></p></noscript>
+<p><a href="{html_esc(reader_url)}">Read this book on Feynman</a></p>
+<script>window.location.replace({json.dumps(reader_url)});</script>
 </body></html>"""
     return HTMLResponse(html, headers={"Cache-Control": "public, max-age=3600, s-maxage=86400"})
 
@@ -1020,7 +1030,7 @@ def mind_page(mind_id: str) -> HTMLResponse:
     desc = bio or f"{name} — {domain} thinker on Feynman"
     base = _SITE_URL
     canonical = f"{base}/mind/{mind_id}"
-    reader_url = f"{base}/#/minds"
+    reader_url = f"{base}/#/mind/{mind_id}"
     reader_js = json.dumps(reader_url)
 
     works_html = ""
@@ -1038,9 +1048,15 @@ def mind_page(mind_id: str) -> HTMLResponse:
         "sameAs": [],
     }, ensure_ascii=False)
 
+    chat_count = mind.get("chat_count", 0)
+    domains_list = [d.strip() for d in domain.split(",") if d.strip()] if domain else []
+    domains_tags = "".join(f'<span class="domain-tag">{html_esc(d)}</span>' for d in domains_list)
+    domains_html = f'<div class="domains">{domains_tags}</div>' if domains_list else ""
+
     html = f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{name} — Feynman Great Minds</title>
 <meta name="description" content="{desc}">
 <link rel="canonical" href="{canonical}">
@@ -1058,9 +1074,8 @@ def mind_page(mind_id: str) -> HTMLResponse:
 {f'<p>{era} · {domain}</p>' if era else f'<p>{domain}</p>'}
 {f'<p>{bio}</p>' if bio else ''}
 {works_html}
-<p><a href="{html_esc(reader_url)}">Chat with {name} on Feynman →</a></p>
-<script>window.location.replace({reader_js});</script>
-<noscript><p><a href="{html_esc(reader_url)}">Continue to Great Minds</a></p></noscript>
+<p><a href="{html_esc(reader_url)}">Chat with {name} on Feynman</a></p>
+<script>window.location.replace({json.dumps(reader_url)});</script>
 </body></html>"""
     return HTMLResponse(html, headers={"Cache-Control": "public, max-age=3600, s-maxage=86400"})
 

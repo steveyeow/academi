@@ -1546,21 +1546,14 @@ function navigate() {
     case 'login': renderLoginPage(); break;
     case 'subscription': renderSubscriptionPage(); break;
     case 'mind':
-      if (!isProUser()) {
-        showProOverlay();
-        window.location.hash = '#/minds';
-        return;
-      }
       currentMindId = route.id;
       renderMindDetail(route.id);
       break;
     case 'book':
-      if (window.FEYNMAN_PRO && !currentUser) { window.location.hash = '#/login'; return; }
       currentBookId = route.id;
       renderBookDetail(route.id);
       break;
     case 'read':
-      if (window.FEYNMAN_PRO && !currentUser) { window.location.hash = '#/login'; return; }
       renderReader(route.id);
       break;
   }
@@ -3189,7 +3182,17 @@ function makeEditableTitle(el, agentId, currentTitle, onRenamed) {
 
 // ─── Share book ───
 async function shareBook(title, agentId) {
-  const url = `${window.location.origin}/share/${agentId}?t=${Math.floor(Date.now()/86400000)}`;
+  const url = `${window.location.origin}/book/${agentId}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    _showToast('Link copied');
+  } catch (_) {
+    prompt('Copy this link:', url);
+  }
+}
+
+async function shareMind(mindId) {
+  const url = `${window.location.origin}/mind/${mindId}`;
   try {
     await navigator.clipboard.writeText(url);
     _showToast('Link copied');
@@ -3213,6 +3216,7 @@ function _showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2200);
 }
 window.shareBook = shareBook;
+window.shareMind = shareMind;
 
 // ─── AI Book Writing ───
 
@@ -3297,7 +3301,7 @@ window.startWriteBook = startWriteBook;
 
 function _wireCanvasShareMenus(root, book) {
   if (!book?.agent_id) return;
-  const shareUrl = `${window.location.origin}/share/${encodeURIComponent(book.agent_id)}?t=${Math.floor(Date.now()/86400000)}`;
+  const shareUrl = `${window.location.origin}/book/${encodeURIComponent(book.agent_id)}`;
   const _canvasAuthor = book.creator_name || '';
   const twitterText = encodeURIComponent(`${book.title || ''} — by ${_canvasAuthor || 'AI'} on feynman.wiki`);
   const twitterUrl = encodeURIComponent(shareUrl);
@@ -3864,9 +3868,10 @@ async function renderBookDetail(bookId) {
 
   const canEdit = isBookOwner(book);
   const editIcon = canEdit ? ' <svg class="editable-hint" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0;transition:opacity .15s;vertical-align:middle;margin-left:4px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>' : '';
+  const shareBtn = `<button type="button" class="book-detail-share-btn" title="Share" onclick="shareBook('${esc(title)}','${esc(bookId)}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></button>`;
   headerEl.innerHTML = `
     ${coverUrl ? `<img class="book-inline-cover" src="${coverUrl}" alt="" onerror="this.style.display='none'" />` : ''}
-    <div class="book-inline-info"><h2 id="book-detail-title">${esc(title)}${editIcon}</h2><p>${esc(author)}</p></div>`;
+    <div class="book-inline-info"><h2 id="book-detail-title">${esc(title)}${editIcon}</h2><p>${esc(author)}</p></div>${shareBtn}`;
   if (canEdit) {
     const h2 = headerEl.querySelector('#book-detail-title');
     h2.style.cssText = 'cursor:pointer;';
@@ -4494,8 +4499,12 @@ async function renderReader(agentId) {
   try {
     _readerData = await api(`/api/agents/${agentId}/read`);
   } catch (err) {
-    page.innerHTML = `<div class="reader-empty"><p>Could not load book: ${esc(err.message)}</p><a href="#/library" class="reader-back-link">&larr; Back to Library</a></div>`;
-    return;
+    try {
+      _readerData = await api(`/api/public/book/${agentId}/read`);
+    } catch (err2) {
+      page.innerHTML = `<div class="reader-empty"><p>Could not load book: ${esc(err2.message)}</p><a href="#/library" class="reader-back-link">&larr; Back to Library</a></div>`;
+      return;
+    }
   }
 
   const d = _readerData;
@@ -4539,12 +4548,12 @@ async function renderReader(agentId) {
       </div>` : '';
   const previewLabel = isPreview ? `<span class="reader-cover-preview-label">Preview</span>` : '';
   const chapterCount = isAI ? d.chapters?.length : (detectedChapters?.length || 0);
-  const _rShareUrl = `${window.location.origin}/share/${encodeURIComponent(agentId)}?t=${Math.floor(Date.now()/86400000)}`;
+  const _rShareUrl = `${window.location.origin}/book/${encodeURIComponent(agentId)}`;
   const _rAuthor = d.author?.replace(/ · AI$/, '') || '';
   const _rTweetText = encodeURIComponent(`${d.title} — by ${_rAuthor || 'AI'} on feynman.wiki`);
   const _rTweetUrl = encodeURIComponent(_rShareUrl);
   const _rTweetIntentUrl = `https://twitter.com/intent/tweet?text=${_rTweetText}&url=${_rTweetUrl}`;
-  const _rTopbarShareHtml = isAI ? `
+  const _rTopbarShareHtml = `
       <div class="reader-topbar-share-wrap">
         <button type="button" class="reader-topbar-share-trigger" aria-label="Share" title="Share">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
@@ -4559,7 +4568,7 @@ async function renderReader(agentId) {
             Copy link
           </button>
         </div>
-      </div>` : '';
+      </div>`;
   const titlePageHtml = `
     <div class="reader-cover">
       <div class="reader-cover-body">
@@ -4722,7 +4731,7 @@ async function renderReader(agentId) {
         </div>`
       : `<div class="reader-end-page">
           <p>End of book</p>
-          ${isAI ? `<p class="reader-end-subtitle">Enjoyed this book? Use the share control in the top bar, or <button type="button" class="reader-end-copy-link">copy link</button></p>` : ''}
+          <p class="reader-end-subtitle">Enjoyed this book? Use the share control in the top bar, or <button type="button" class="reader-end-copy-link">copy link</button></p>
         </div>`;
     _readerPages.push({ html: endHtml, chNum: -1 });
 
@@ -6402,9 +6411,12 @@ async function renderMindDetail(mindId) {
         mindChatHistory.push({ role: m.role, content: m.content });
       }
     }
+  } else if (!currentUser && window.FEYNMAN_PRO) {
+    chatBox.innerHTML = `<div style="padding:32px;text-align:center;color:var(--text-muted)">
+      <p style="margin-bottom:12px">Sign in to chat with ${esc(mind.name)}</p>
+      <a href="#/login" style="color:var(--accent);font-weight:600;text-decoration:none">Sign in →</a>
+    </div>`;
   } else if (!_sessionsRestored) {
-    // Sessions not yet loaded from DB — skip session creation to avoid duplicates.
-    // The page will re-render after restoreSessions + navigate().
     return;
   } else {
     const session = await createSession(mindId);
@@ -6443,7 +6455,8 @@ async function renderMindDetail(mindId) {
     ${mind.bio_summary ? `<p style="font-size:12px;color:var(--text-secondary);line-height:1.5;margin-bottom:12px">${esc(mind.bio_summary)}</p>` : ''}
     ${domains.length ? `<div style="margin-bottom:12px">${domains.map(d => `<span class="mind-domain-tag">${esc(d)}</span> `).join('')}</div>` : ''}
     ${works.length ? `<h3 class="sidebar-title" style="margin-top:16px">WORKS</h3><ul style="font-size:12px;color:var(--text-secondary);padding-left:16px;margin:0">${works.map(w => `<li style="margin-bottom:4px">${esc(w)}</li>`).join('')}</ul>` : ''}
-    <p style="font-size:11px;color:var(--text-muted);margin-top:12px">${mind.chat_count || 0} discussions</p>`;
+    <p style="font-size:11px;color:var(--text-muted);margin-top:12px">${mind.chat_count || 0} discussions</p>
+    <button type="button" class="mind-share-btn" onclick="shareMind('${esc(mind.id)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>Share</button>`;
 }
 
 async function sendMindChat(mindId, message) {

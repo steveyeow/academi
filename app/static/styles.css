@@ -1125,6 +1125,17 @@ body {
 .book-inline-info p {
   font-size: 13px; color: var(--text-muted);
 }
+.book-detail-share-btn {
+  margin-left: auto; flex-shrink: 0; padding: 6px 12px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: transparent; color: var(--text-secondary);
+  cursor: pointer; font-size: 12px;
+  display: flex; align-items: center; gap: 4px;
+  transition: background .15s, color .15s;
+}
+.book-detail-share-btn:hover {
+  background: var(--bg-hover); color: var(--text-primary);
+}
 
 /* Book detail layout */
 .book-page {
@@ -1974,6 +1985,17 @@ body {
   border-radius: 999px;
   background: var(--bg-sidebar);
   color: var(--text-secondary);
+}
+.mind-share-btn {
+  margin-top: 12px; width: 100%; padding: 8px 0;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: transparent; color: var(--text-secondary);
+  cursor: pointer; font-size: 12px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  transition: background .15s, color .15s;
+}
+.mind-share-btn:hover {
+  background: var(--bg-hover); color: var(--text-primary);
 }
 .mind-chat-btn {
   font-size: 12px;
