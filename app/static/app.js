@@ -4632,28 +4632,26 @@ async function renderReader(agentId) {
     <div class="reader-progress-bar"><div class="reader-progress-fill" id="reader-progress-fill"></div></div>
   `;
 
-  if (isAI) {
-    const shareWrap = page.querySelector('.reader-topbar-share-wrap');
-    if (shareWrap) {
-      const trig = shareWrap.querySelector('.reader-topbar-share-trigger');
-      if (trig) trig.addEventListener('click', (e) => {
-        e.stopPropagation();
-        shareWrap.classList.toggle('open');
-      });
-      const xBtn = shareWrap.querySelector('.reader-share-x');
-      if (xBtn) xBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        window.open(_rTweetIntentUrl, '_blank');
-        shareWrap.classList.remove('open');
-      });
-      const copyBtn = shareWrap.querySelector('.reader-share-copy');
-      if (copyBtn) copyBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        navigator.clipboard.writeText(_rShareUrl);
-        _showToast('Link copied');
-        shareWrap.classList.remove('open');
-      });
-    }
+  const shareWrap = page.querySelector('.reader-topbar-share-wrap');
+  if (shareWrap) {
+    const trig = shareWrap.querySelector('.reader-topbar-share-trigger');
+    if (trig) trig.addEventListener('click', (e) => {
+      e.stopPropagation();
+      shareWrap.classList.toggle('open');
+    });
+    const xBtn = shareWrap.querySelector('.reader-share-x');
+    if (xBtn) xBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.open(_rTweetIntentUrl, '_blank');
+      shareWrap.classList.remove('open');
+    });
+    const copyBtn = shareWrap.querySelector('.reader-share-copy');
+    if (copyBtn) copyBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(_rShareUrl);
+      _showToast('Link copied');
+      shareWrap.classList.remove('open');
+    });
   }
 
   // Track ownership for editable title in reader
