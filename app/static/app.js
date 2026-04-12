@@ -6797,7 +6797,7 @@ async function init() {
   buildBookList();
   // Re-render current page now that data is loaded (replaces loading placeholders)
   navigate();
-  await restoreSessions();
+  if (currentUser) await restoreSessions();
   renderChatHistory();
   updateAuthUI();
 
