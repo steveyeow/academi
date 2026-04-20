@@ -1986,19 +1986,14 @@ function appendMsg(container, role, text, sources, opts, hasMentions, contextMin
       });
     });
   } else if (role === 'user') {
-    if (contextMinds?.length) {
-      const tagsEl = document.createElement('div');
-      tagsEl.className = 'msg-context-minds';
-      tagsEl.innerHTML = contextMinds.map(m => {
-        const c = mindColor(m.name);
-        const i = mindInitials(m.name);
-        return `<span class="msg-context-mind"><span class="msg-context-avatar" style="background:${c}">${i}</span>${esc(m.name)}</span>`;
-      }).join('');
-      el.appendChild(tagsEl);
-    }
     const textEl = document.createElement('span');
+    const contextPrefix = contextMinds?.length
+      ? contextMinds.map(m => `<span class="mention-tag">@${esc(m.name)}</span>`).join(' ') + ' '
+      : '';
     if (hasMentions) {
-      textEl.innerHTML = renderUserMsgWithMentions(cleaned);
+      textEl.innerHTML = contextPrefix + renderUserMsgWithMentions(cleaned);
+    } else if (contextPrefix) {
+      textEl.innerHTML = contextPrefix + esc(cleaned);
     } else {
       textEl.textContent = cleaned;
     }
@@ -3005,7 +3000,8 @@ function renderLibraryGrid() {
   renderBookGrid(c, filtered);
   // If searching and no results, show searching indicator (only while actively searching)
   if (librarySearch && librarySearch.length >= 2 && !filtered.length) {
-    if (_searchingQuery) {
+    const searchActive = _searchingQuery === librarySearch || _pendingSearchQuery === librarySearch;
+    if (searchActive) {
       c.innerHTML = `<div class="search-discover-prompt" id="search-discover-prompt">
         <span class="loading-dot">Looking up "${esc(librarySearch)}" — will add it if found...</span>
       </div>`;
@@ -3050,11 +3046,13 @@ async function discoverMore(topics) {
 }
 
 let _searchingQuery = null;
+let _pendingSearchQuery = null;
 let _searchDiscoveredIds = new Set();
 let _searchUsage = null;
 async function autoSearchBook(query) {
   if (_searchingQuery === query) return;
   _searchingQuery = query;
+  if (_pendingSearchQuery === query) _pendingSearchQuery = null;
   try {
     const data = await api('/api/search-book', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -3066,7 +3064,9 @@ async function autoSearchBook(query) {
     _searchUsage = data.usage?.total_tokens > 0 ? data.usage : null;
     await loadAgents();
     buildBookList();
+    _searchingQuery = null;
     renderLibraryGrid();
+    return;
   } catch (err) {
     if (_searchingQuery !== query) return;
     const c = document.getElementById('search-discover-prompt');
@@ -3084,6 +3084,22 @@ function renderBookGrid(container, books) {
   if (!books.length) {
     if (booksLoadState === 'loading' || booksLoadState === 'idle') {
       container.innerHTML = '<div class="empty-state"><span class="loading-dot">Loading books...</span></div>';
+      return;
+    }
+    if (booksLoadState === 'error') {
+      container.innerHTML = `<div class="empty-state">
+        <p>Couldn't load your library.</p>
+        <button class="primary-btn" id="library-retry-btn" style="margin-top:12px">Try again</button>
+      </div>`;
+      const retryBtn = container.querySelector('#library-retry-btn');
+      if (retryBtn) {
+        retryBtn.addEventListener('click', async () => {
+          retryBtn.disabled = true;
+          retryBtn.textContent = 'Loading...';
+          await loadAgents();
+          renderLibraryGrid();
+        });
+      }
       return;
     }
     container.innerHTML = '<div class="empty-state"><p>No books found.</p></div>';
@@ -6525,40 +6541,50 @@ async function sendMindChat(mindId, message) {
   _queueSessionMessage(sentSessionId, 'user', message, contextMinds.length ? { contextMinds: contextMinds.map(m => ({ name: m.name })) } : undefined);
 
   const cleanMessage = mentionedNames.length ? stripMentions(message) : message;
-  const body = { message: cleanMessage };
-  if (mindChatHistory.length) body.history = mindChatHistory;
+  const primaryMind = allMinds.find(m => m.id === mindId) || activeMinds.get(mindId);
+  const primaryName = primaryMind?.name || '';
+  const primaryMentioned = mentionedNames.some(n => n.toLowerCase() === primaryName.toLowerCase());
+  const skipPrimary = mentionedNames.length > 0 && !primaryMentioned;
 
   const bookContext = [];
   const agentIds = [];
   if (selectedBooks.size) {
-    body.book_context = [...selectedBooks.values()].map(b => ({ title: b.title, author: b.author || '' }));
-    body.agent_ids = [...selectedBooks.values()].map(b => b.agentId);
-    bookContext.push(...body.book_context);
-    agentIds.push(...body.agent_ids);
+    bookContext.push(...[...selectedBooks.values()].map(b => ({ title: b.title, author: b.author || '' })));
+    agentIds.push(...[...selectedBooks.values()].map(b => b.agentId));
   }
 
   try {
-    const data = await api('/api/minds/' + mindId + '/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    removeLoading();
+    if (!skipPrimary) {
+      const body = { message: cleanMessage };
+      if (mindChatHistory.length) body.history = mindChatHistory;
+      if (bookContext.length) {
+        body.book_context = bookContext;
+        body.agent_ids = agentIds;
+      }
+      const data = await api('/api/minds/' + mindId + '/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      removeLoading();
 
-    const mind = allMinds.find(m => m.id === mindId);
-    const mindName = mind?.name || 'Mind';
-    appendMindMsg(chatBox, mindName, data.response);
+      const mindName = primaryMind?.name || 'Mind';
+      appendMindMsg(chatBox, mindName, data.response);
 
-    mindChatHistory.push({ role: 'user', content: message });
-    mindChatHistory.push({ role: 'assistant', content: data.response });
+      mindChatHistory.push({ role: 'user', content: message });
+      mindChatHistory.push({ role: 'assistant', content: data.response });
 
-    _queueSessionMessage(sentSessionId, 'mind', data.response, { mindName });
+      _queueSessionMessage(sentSessionId, 'mind', data.response, { mindName });
 
-    if (!activeMinds.has(mindId) && mind) {
-      activeMinds.set(mindId, { id: mindId, name: mind.name });
+      if (!activeMinds.has(mindId) && primaryMind) {
+        activeMinds.set(mindId, { id: mindId, name: primaryMind.name });
+      }
+
+      _saveMindSession(chatBox);
+    } else {
+      removeLoading();
     }
 
-    _saveMindSession(chatBox);
     const hasExtraMinds = selectedMinds.size > 0 || mentionedNames.length > 0;
     if (hasExtraMinds) {
       _inviteMindsToChat(chatBox, message, bookContext, agentIds, mentionedNames, mindId);
@@ -7010,16 +7036,18 @@ function bindComposerControls() {
     librarySearch = e.target.value.trim();
     _searchDiscoveredIds.clear();
     _searchUsage = null;
-    renderLibraryGrid();
+    _pendingSearchQuery = null;
     clearTimeout(searchTimer);
     if (librarySearch.length >= 2) {
       // Check if local results are empty
       const q = librarySearch.toLowerCase();
       const hasLocal = allBooks.some(b => b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q));
       if (!hasLocal) {
+        _pendingSearchQuery = librarySearch;
         searchTimer = setTimeout(() => autoSearchBook(librarySearch), 600);
       }
     }
+    renderLibraryGrid();
   });
   document.querySelectorAll('.filter-tag').forEach(btn => {
     btn.addEventListener('click', () => {
