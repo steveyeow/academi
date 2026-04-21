@@ -544,10 +544,10 @@ body {
   max-width: 320px;
   max-height: 200px;
   overflow-y: auto;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: var(--bg-chat);
+  border: 1px solid var(--border-strong);
   border-radius: 12px;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-lg);
   z-index: 200;
   padding: 4px;
   margin-bottom: 8px;

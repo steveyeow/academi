@@ -2295,7 +2295,8 @@ async function switchToSession(id) {
         appendJoinNotice(chatBox, m.mindNames || []);
       } else {
         const cm = m.role === 'user' ? m.contextMinds : undefined;
-        appendMsg(chatBox, m.role, m.content, m.sources, m.opts, false, cm);
+        const hasMentions = m.role === 'user' && /(?:^|\s)@\S/.test(m.content || '');
+        appendMsg(chatBox, m.role, m.content, m.sources, m.opts, hasMentions, cm);
       }
     }
     renderSelectedChips();
@@ -2627,7 +2628,7 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
     }
 
     const hasMentions = targetMindNames && targetMindNames.length > 0;
-    const skipSuggest = hasMentions || onMindPage || (!isProUser() && _mindsInvitedOnce);
+    const skipSuggest = hasMentions || (!isProUser() && _mindsInvitedOnce);
 
     const allKnownNames = [...activeMinds.values(), ...selectedMinds.values()].map(m => m.name);
     const suggestCount = Math.floor(Math.random() * 3) + 1;
@@ -2892,7 +2893,8 @@ async function onChatPageShow() {
         appendJoinNotice(chatBox, m.mindNames || []);
       } else {
         const cm = m.role === 'user' ? m.contextMinds : undefined;
-        appendMsg(chatBox, m.role, m.content, m.sources, m.opts, false, cm);
+        const hasMentions = m.role === 'user' && /(?:^|\s)@\S/.test(m.content || '');
+        appendMsg(chatBox, m.role, m.content, m.sources, m.opts, hasMentions, cm);
       }
     }
     restoreChatSidebar(session.messages);
@@ -5153,13 +5155,22 @@ function stripMentions(text) {
 }
 
 function renderUserMsgWithMentions(text) {
-  const minds = _getMentionableMinds();
+  // Match against all known minds, not just currently-mentionable, so restored
+  // @tags still render as tags even if that mind is no longer active/selected.
+  const namesSeen = new Set();
+  const names = [];
+  for (const m of _getMentionableMinds()) {
+    if (!namesSeen.has(m.name)) { namesSeen.add(m.name); names.push(m.name); }
+  }
+  for (const m of allMinds) {
+    if (!namesSeen.has(m.name)) { namesSeen.add(m.name); names.push(m.name); }
+  }
   let html = esc(text);
-  const sorted = [...minds].sort((a, b) => b.name.length - a.name.length);
-  for (const m of sorted) {
-    const escaped = esc(m.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  names.sort((a, b) => b.length - a.length);
+  for (const name of names) {
+    const escaped = esc(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const pattern = new RegExp('@' + escaped + '(?=\\s|$|&)', 'g');
-    html = html.replace(pattern, `<span class="mention-tag">@${esc(m.name)}</span>`);
+    html = html.replace(pattern, `<span class="mention-tag">@${esc(name)}</span>`);
   }
   return html;
 }
@@ -6440,7 +6451,8 @@ async function renderMindDetail(mindId) {
       } else if (m.role === 'system-notice') {
         appendJoinNotice(chatBox, m.mindNames || []);
       } else if (m.role === 'user') {
-        appendMsg(chatBox, 'user', m.content, null, null, false, m.contextMinds);
+        const hasMentions = /(?:^|\s)@\S/.test(m.content || '');
+        appendMsg(chatBox, 'user', m.content, null, null, hasMentions, m.contextMinds);
         mindChatHistory.push({ role: 'user', content: m.content });
       } else {
         appendMsg(chatBox, m.role, m.content, m.sources, m.opts);
@@ -6544,7 +6556,8 @@ async function sendMindChat(mindId, message) {
   const primaryMind = allMinds.find(m => m.id === mindId) || activeMinds.get(mindId);
   const primaryName = primaryMind?.name || '';
   const primaryMentioned = mentionedNames.some(n => n.toLowerCase() === primaryName.toLowerCase());
-  const skipPrimary = mentionedNames.length > 0 && !primaryMentioned;
+  const otherSelected = selectedMinds.size > 0 && !selectedMinds.has(mindId);
+  const skipPrimary = !primaryMentioned && (mentionedNames.length > 0 || otherSelected);
 
   const bookContext = [];
   const agentIds = [];
@@ -6585,10 +6598,7 @@ async function sendMindChat(mindId, message) {
       removeLoading();
     }
 
-    const hasExtraMinds = selectedMinds.size > 0 || mentionedNames.length > 0;
-    if (hasExtraMinds) {
-      _inviteMindsToChat(chatBox, message, bookContext, agentIds, mentionedNames, mindId);
-    }
+    _inviteMindsToChat(chatBox, message, bookContext, agentIds, mentionedNames, mindId);
   } catch (err) {
     removeLoading();
     appendMsg(chatBox, 'assistant', 'Error: ' + err.message);
