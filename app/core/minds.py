@@ -499,6 +499,165 @@ def create_mind_from_content(
     return mind
 
 
+def suggest_minds_hybrid(
+    query_text: str,
+    count: int = 3,
+    exclude: list[str] | None = None,
+    primary_name: str = "",
+    primary_era: str = "",
+    primary_domain: str = "",
+    top_k: int = 15,
+    min_pool: int = 8,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Hybrid retrieve-and-rerank suggestion.
+
+    1. Embed the query text (user message / book title+author / topic) with
+       RETRIEVAL_QUERY task type.
+    2. Cosine-score against all minds in DB that have embeddings, excluding
+       the primary and already-joined minds.
+    3. Feed the top-K candidates to an LLM that picks *count* diverse winners
+       with short reasons — so the final selection is grounded in the actual
+       catalog rather than the LLM's general priors (which over-index on
+       Socrates / Descartes / Nietzsche).
+
+    Falls back to the LLM-only topic suggestion when embeddings are
+    unavailable or the embedded pool is too small.
+    """
+    exclude_names = {n.strip().lower() for n in (exclude or []) if n.strip()}
+    if primary_name:
+        exclude_names.add(primary_name.strip().lower())
+
+    rows = list_minds_with_embeddings()
+    eligible = [r for r in rows if (r.get("name") or "").lower() not in exclude_names]
+
+    # Fall back to LLM-only when we don't have enough candidates to retrieve from
+    if len(eligible) < min_pool:
+        log.info("Hybrid suggest: only %d embedded minds eligible, falling back to LLM-only", len(eligible))
+        return suggest_minds_for_topic(
+            query_text, count=count,
+            primary_name=primary_name,
+            primary_era=primary_era,
+            primary_domain=primary_domain,
+        )
+
+    # Embed query
+    try:
+        embedder = pick_provider("embed")
+        q_vec = np.array(embedder.embed_texts([query_text], task_type="RETRIEVAL_QUERY")[0], dtype=np.float32)
+    except Exception as exc:
+        log.warning("Hybrid suggest: query embed failed (%s), falling back to LLM-only", exc)
+        return suggest_minds_for_topic(
+            query_text, count=count,
+            primary_name=primary_name,
+            primary_era=primary_era,
+            primary_domain=primary_domain,
+        )
+    q_norm = float(np.linalg.norm(q_vec)) or 1.0
+
+    scored: list[tuple[float, dict[str, Any]]] = []
+    for r in eligible:
+        emb = bytes(r["embedding"]) if isinstance(r.get("embedding"), memoryview) else r.get("embedding")
+        if not emb:
+            continue
+        try:
+            vec = np.frombuffer(emb, dtype=np.float32, count=r["embedding_dim"])
+        except Exception:
+            continue
+        norm = r.get("embedding_norm") or float(np.linalg.norm(vec)) or 1.0
+        sim = float(np.dot(q_vec, vec) / (q_norm * norm))
+        scored.append((sim, r))
+
+    scored.sort(key=lambda x: -x[0])
+    pool = scored[:max(top_k, count * 4)]
+    if not pool:
+        return suggest_minds_for_topic(
+            query_text, count=count,
+            primary_name=primary_name,
+            primary_era=primary_era,
+            primary_domain=primary_domain,
+        )
+
+    # LLM re-rank: pick diverse *count* from the retrieved pool
+    candidates_lines = []
+    for sim, r in pool:
+        nm = r.get("name") or ""
+        dm = r.get("domain") or ""
+        candidates_lines.append(f"- {nm} ({dm}) [relevance {sim:.2f}]")
+    candidates_block = "\n".join(candidates_lines)
+
+    primary_line = ""
+    if primary_name:
+        descriptor = " ".join(p for p in [primary_era, primary_domain] if p).strip()
+        descriptor = f" ({descriptor})" if descriptor else ""
+        primary_line = (
+            f"The user is currently chatting with {primary_name}{descriptor}. "
+            "Pick thinkers who bring contrasting angles so the discussion has real friction.\n"
+        )
+
+    prompt = (
+        f'Topic / discussion context: "{query_text}"\n'
+        f"{primary_line}"
+        f"Candidate thinkers (retrieved from our library, scored by semantic relevance):\n"
+        f"{candidates_block}\n\n"
+        f"From the candidates above, pick EXACTLY {count} that together offer the "
+        "most diverse, substantive perspectives on the topic. Prefer different eras "
+        "and domains. Do NOT invent new names — only use names from the list.\n"
+        "Return ONLY a JSON array: [{\"name\": \"...\", \"reason\": \"one-sentence why\"}]"
+    )
+    try:
+        result, _ = chat_with_fallback(
+            system="You are an expert on intellectual history selecting panelists.",
+            user=prompt,
+            provider_order=["gemini", "deepseek", "openai", "kimi", "anthropic"],
+        )
+        picks = _parse_json_response(result.content)
+    except Exception as exc:
+        log.warning("Hybrid suggest: re-rank LLM failed (%s), returning top-N by cosine", exc)
+        picks = [{"name": r.get("name"), "reason": "High semantic relevance to the topic."} for _, r in pool[:count]]
+        result = None
+
+    # Map LLM's chosen names back to full mind rows (so we return era/domain too)
+    by_name_lower = {(r.get("name") or "").lower(): r for _, r in pool}
+    selected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for pk in picks:
+        nm = (pk.get("name") or "").strip()
+        key = nm.lower()
+        if not nm or key in seen:
+            continue
+        row = by_name_lower.get(key)
+        if not row:
+            continue
+        seen.add(key)
+        selected.append({
+            "name": row.get("name") or nm,
+            "era": row.get("era") or "",
+            "domain": row.get("domain") or "",
+            "reason": pk.get("reason") or "",
+        })
+        if len(selected) >= count:
+            break
+
+    # If LLM returned too few valid picks, top-up from pool
+    if len(selected) < count:
+        for _, r in pool:
+            key = (r.get("name") or "").lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            selected.append({
+                "name": r.get("name") or "",
+                "era": r.get("era") or "",
+                "domain": r.get("domain") or "",
+                "reason": "High semantic relevance to the topic.",
+            })
+            if len(selected) >= count:
+                break
+
+    usage = _usage_from_result(result) if result is not None else {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    return selected[:count], usage
+
+
 def suggest_minds_for_book(
     title: str, author: str = "", category: str = "", count: int = 3
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
@@ -524,14 +683,42 @@ def suggest_minds_for_book(
 
 
 def suggest_minds_for_topic(
-    topic: str, count: int = 4
+    topic: str,
+    count: int = 4,
+    primary_name: str = "",
+    primary_era: str = "",
+    primary_domain: str = "",
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """Use LLM to suggest relevant minds for a topic. Returns (suggestions, usage)."""
+    """Use LLM to suggest relevant minds for a topic. Returns (suggestions, usage).
+
+    When *primary_name* is set (user is chatting inside that mind's page), the
+    prompt nudges the LLM to pick thinkers who contrast with the primary and
+    explicitly avoid the go-to classical picks that dominate otherwise.
+    """
+    primary_line = ""
+    contrast_rule = ""
+    if primary_name:
+        descriptor_parts = [primary_era, primary_domain]
+        descriptor = " ".join(p for p in descriptor_parts if p).strip()
+        descriptor = f" ({descriptor})" if descriptor else ""
+        primary_line = (
+            f"The user is currently in a conversation with {primary_name}{descriptor}. "
+            f"They want OTHER thinkers to join and bring different angles.\n"
+        )
+        contrast_rule = (
+            f"- Do NOT suggest {primary_name}. Prioritise thinkers whose domain, era, or "
+            "stance genuinely contrasts with theirs so the discussion has real friction.\n"
+            "- Avoid the default go-to classical picks (Socrates, Plato, Aristotle, "
+            "Descartes, Nietzsche, Kant) unless they are a uniquely strong fit for this "
+            "specific topic — prefer lesser-known but substantive voices when possible.\n"
+        )
     prompt = (
         f'The user wants to explore: "{topic}"\n'
+        f"{primary_line}"
         f"Suggest exactly {count} thinkers (historical or contemporary) — scholars, "
         "academics, or practitioners — who represent diverse, substantive perspectives "
         "on this topic. Include different eras and at least one contrarian viewpoint.\n"
+        f"{contrast_rule}"
         "Return ONLY a JSON array: [{\"name\": \"...\", \"era\": \"...\", "
         "\"domain\": \"...\", \"reason\": \"...\"}]"
     )

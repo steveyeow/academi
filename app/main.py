@@ -76,6 +76,7 @@ from .core.minds import (
     panel_chat,
     suggest_minds_for_book,
     suggest_minds_for_topic,
+    suggest_minds_hybrid,
 )
 from .core.skills import resolve_multi_agent, resolve_skills
 from .core.sources import fetch_book_content, fetch_wikipedia_summary
@@ -2315,6 +2316,9 @@ class MindSuggestRequest(BaseModel):
     topic: str = ""
     exclude: list[str] = Field(default_factory=list)
     count: int = Field(default=3, ge=1, le=6)
+    primary_name: str = ""
+    primary_era: str = ""
+    primary_domain: str = ""
 
 
 class MindChatRequest(BaseModel):
@@ -2447,18 +2451,26 @@ def api_create_mind_from_content(
 @app.post("/api/minds/suggest")
 def api_suggest_minds(payload: MindSuggestRequest, request: Request) -> dict[str, Any]:
     _check_quota(request, "generate_mind")
+
+    # Build a unified query text from whichever context the caller provided.
+    if payload.book_title:
+        query_text = payload.book_title
+        if payload.book_author:
+            query_text = f"{query_text} by {payload.book_author}"
+    elif payload.topic:
+        query_text = payload.topic
+    else:
+        raise HTTPException(status_code=400, detail="Provide book_title or topic")
+
     try:
-        if payload.book_title:
-            suggestions, usage = suggest_minds_for_book(
-                payload.book_title, payload.book_author,
-                count=payload.count,
-            )
-        elif payload.topic:
-            suggestions, usage = suggest_minds_for_topic(
-                payload.topic, count=payload.count,
-            )
-        else:
-            raise HTTPException(status_code=400, detail="Provide book_title or topic")
+        suggestions, usage = suggest_minds_hybrid(
+            query_text=query_text,
+            count=payload.count,
+            exclude=payload.exclude,
+            primary_name=payload.primary_name,
+            primary_era=payload.primary_era,
+            primary_domain=payload.primary_domain,
+        )
     except ProviderError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except HTTPException:
@@ -2466,7 +2478,7 @@ def api_suggest_minds(payload: MindSuggestRequest, request: Request) -> dict[str
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Suggestion failed: {exc}")
 
-    # Filter out excluded names
+    # Defensive exclude filter in case a fallback path returned a name we already have
     if payload.exclude:
         excluded = {n.lower() for n in payload.exclude}
         suggestions = [s for s in suggestions if s.get("name", "").lower() not in excluded]

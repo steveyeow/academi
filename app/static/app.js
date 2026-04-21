@@ -2783,6 +2783,14 @@ async function _inviteMindsToChat(chatBox, message, bookContext, agentIds, targe
     } else {
       suggestBody.topic = message.slice(0, 100);
     }
+    if (excludeMindId) {
+      const primary = allMinds.find(m => m.id === excludeMindId);
+      if (primary) {
+        suggestBody.primary_name = primary.name || '';
+        suggestBody.primary_era = primary.era || '';
+        suggestBody.primary_domain = primary.domain || '';
+      }
+    }
 
     showMindsLoading(chatBox);
     const autoAddedMindIds = [];

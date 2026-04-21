@@ -1085,7 +1085,7 @@ def update_mind_embedding(mind_id: str, vector_bytes: bytes, dim: int, norm: flo
 def list_minds_with_embeddings() -> list[dict[str, Any]]:
     with get_conn() as conn:
         try:
-            rows = _fetchall(conn, _q("SELECT id, name, domain, embedding, embedding_dim, embedding_norm FROM minds WHERE embedding IS NOT NULL"))
+            rows = _fetchall(conn, _q("SELECT id, name, era, domain, embedding, embedding_dim, embedding_norm FROM minds WHERE embedding IS NOT NULL"))
             return [dict(r) for r in rows]
         except Exception:
             return []
