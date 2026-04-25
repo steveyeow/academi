@@ -381,6 +381,47 @@ def init_db() -> None:
                 _execute(conn, "RELEASE SAVEPOINT sp_users_subended")
             except Exception:
                 _execute(conn, "ROLLBACK TO SAVEPOINT sp_users_subended")
+
+            # Migration: dedupe rows that share an email, then enforce UNIQUE(email).
+            # Without this, two concurrent /api requests for the same logged-in user
+            # could each pass the "user not found" check and both INSERT, leaving
+            # duplicates (ON CONFLICT DO NOTHING only fires on declared constraints).
+            try:
+                _execute(conn, "SAVEPOINT sp_users_email_dedupe")
+                dup_emails = _fetchall(conn, """
+                    SELECT email FROM users
+                    WHERE email IS NOT NULL AND email <> ''
+                    GROUP BY email
+                    HAVING COUNT(*) > 1
+                """)
+                for de in dup_emails:
+                    em = de["email"]
+                    rows = _fetchall(conn,
+                        "SELECT id FROM users WHERE email = %s ORDER BY created_at ASC",
+                        (em,))
+                    keeper = rows[0]["id"]
+                    for r in rows[1:]:
+                        dup_id = r["id"]
+                        for tbl in ("agents", "chat_sessions", "ai_books", "messages", "mind_memories"):
+                            _execute(conn,
+                                f'UPDATE "{tbl}" SET user_id = %s WHERE user_id = %s',
+                                (keeper, dup_id))
+                        _execute(conn,
+                            "UPDATE usage SET user_id = %s WHERE user_id = %s",
+                            (keeper, dup_id))
+                        _execute(conn, "DELETE FROM users WHERE id = %s", (dup_id,))
+                _execute(conn, "RELEASE SAVEPOINT sp_users_email_dedupe")
+            except Exception as e:
+                _execute(conn, "ROLLBACK TO SAVEPOINT sp_users_email_dedupe")
+                log.warning("users email dedupe migration skipped: %s", e)
+
+            try:
+                _execute(conn, "SAVEPOINT sp_users_email_unique")
+                _execute(conn, "ALTER TABLE users ADD CONSTRAINT users_email_unique UNIQUE (email)")
+                _execute(conn, "RELEASE SAVEPOINT sp_users_email_unique")
+            except Exception:
+                _execute(conn, "ROLLBACK TO SAVEPOINT sp_users_email_unique")
+
             _execute(conn, """
                 CREATE TABLE IF NOT EXISTS usage (
                     id SERIAL PRIMARY KEY,
@@ -1359,15 +1400,20 @@ def get_or_create_user(user_id: str, email: str) -> dict[str, Any]:
                         f'UPDATE "{tbl}" SET user_id = ? WHERE user_id = ?'
                     ), (user_id, old_id))
                 if _USE_PG:
+                    # Free email on the old row so the new row can be inserted
+                    # without tripping UNIQUE(email).
+                    _execute(conn,
+                        "UPDATE users SET email = NULL WHERE id = %s",
+                        (old_id,))
                     _execute(conn, _q(
                         "INSERT INTO users (id, email, tier, stripe_customer_id, "
                         "stripe_subscription_id, subscription_status, "
                         "subscription_ended_at, created_at) "
-                        "SELECT ?, email, tier, stripe_customer_id, "
+                        "SELECT ?, ?, tier, stripe_customer_id, "
                         "stripe_subscription_id, subscription_status, "
                         "subscription_ended_at, created_at "
                         "FROM users WHERE id = ?"
-                    ), (user_id, old_id))
+                    ), (user_id, email, old_id))
                     _execute(conn,
                         "UPDATE usage SET user_id = %s WHERE user_id = %s",
                         (user_id, old_id))
