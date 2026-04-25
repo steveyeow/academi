@@ -1647,13 +1647,23 @@ def clear_stripe_webhook(event_id: str) -> None:
 
 
 def record_usage(user_id: str, action: str, tokens_used: int = 0) -> None:
+    """Record a usage event. Failures are logged at ERROR level (not raised)
+    because record_usage is normally called AFTER a paid LLM response has
+    already been generated; raising here would 500 the endpoint and prompt
+    the user to retry, multiplying the cost we just incurred. The logged
+    record (with tokens_used) is the source of truth for postmortem
+    reconciliation when the database had a transient hiccup."""
     try:
         with get_conn() as conn:
             _execute(conn, _q("""
                 INSERT INTO usage (user_id, action, tokens_used) VALUES (?, ?, ?)
             """), (user_id, action, tokens_used))
     except Exception as exc:
-        log.warning("Failed to record usage for user=%s action=%s: %s", user_id, action, exc)
+        log.error(
+            "USAGE_RECORD_FAILED user=%s action=%s tokens=%s err=%s",
+            user_id, action, tokens_used, exc,
+            exc_info=True,
+        )
 
 
 def count_usage_today(user_id: str, action: str) -> int:
