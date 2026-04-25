@@ -7,7 +7,13 @@ import stripe
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from ..core.db import find_user_by_stripe_customer, get_user, update_user_tier
+from ..core.db import (
+    clear_stripe_webhook,
+    find_user_by_stripe_customer,
+    get_user,
+    mark_stripe_webhook_processed,
+    update_user_tier,
+)
 
 log = logging.getLogger(__name__)
 
@@ -69,43 +75,58 @@ async def stripe_webhook(request: Request):
     except stripe.error.SignatureVerificationError:
         raise HTTPException(status_code=400, detail="Invalid signature")
 
+    event_id = event.get("id") or ""
     event_type = event["type"]
     data = event["data"]["object"]
 
-    if event_type == "checkout.session.completed":
-        user_id = data.get("metadata", {}).get("user_id")
-        customer_id = data.get("customer")
-        subscription_id = data.get("subscription")
-        if user_id:
-            update_user_tier(user_id, "pro", customer_id, subscription_id,
-                             subscription_status="active")
-            log.info("User %s upgraded to pro via checkout", user_id)
+    # Idempotency guard: Stripe re-delivers events on its own retry policy and
+    # may also deliver the same event twice during transient failures. Without
+    # this, checkout.session.completed running twice overwrites timestamps and
+    # subscription.deleted replays could downgrade a re-subscribed user.
+    if event_id and not mark_stripe_webhook_processed(event_id):
+        log.info("Stripe webhook %s (%s) already processed, skipping", event_id, event_type)
+        return JSONResponse({"status": "ok", "duplicate": True})
 
-    elif event_type == "customer.subscription.updated":
-        customer_id = data.get("customer")
-        status = data.get("status")
-        user = find_user_by_stripe_customer(customer_id) if customer_id else None
-        if user:
-            tier = "pro" if status in ("active", "trialing") else "free"
-            ended_at = None
-            if status in ("canceled", "unpaid", "past_due"):
+    try:
+        if event_type == "checkout.session.completed":
+            user_id = data.get("metadata", {}).get("user_id")
+            customer_id = data.get("customer")
+            subscription_id = data.get("subscription")
+            if user_id:
+                update_user_tier(user_id, "pro", customer_id, subscription_id,
+                                 subscription_status="active")
+                log.info("User %s upgraded to pro via checkout", user_id)
+
+        elif event_type == "customer.subscription.updated":
+            customer_id = data.get("customer")
+            status = data.get("status")
+            user = find_user_by_stripe_customer(customer_id) if customer_id else None
+            if user:
+                tier = "pro" if status in ("active", "trialing") else "free"
+                ended_at = None
+                if status in ("canceled", "unpaid", "past_due"):
+                    from datetime import datetime, timezone
+                    ended_at = datetime.now(timezone.utc).isoformat()
+                update_user_tier(str(user["id"]), tier,
+                                 subscription_status=status,
+                                 subscription_ended_at=ended_at)
+                log.info("Subscription updated for user %s: status=%s tier=%s", user["id"], status, tier)
+
+        elif event_type == "customer.subscription.deleted":
+            customer_id = data.get("customer")
+            user = find_user_by_stripe_customer(customer_id) if customer_id else None
+            if user:
                 from datetime import datetime, timezone
                 ended_at = datetime.now(timezone.utc).isoformat()
-            update_user_tier(str(user["id"]), tier,
-                             subscription_status=status,
-                             subscription_ended_at=ended_at)
-            log.info("Subscription updated for user %s: status=%s tier=%s", user["id"], status, tier)
-
-    elif event_type == "customer.subscription.deleted":
-        customer_id = data.get("customer")
-        user = find_user_by_stripe_customer(customer_id) if customer_id else None
-        if user:
-            from datetime import datetime, timezone
-            ended_at = datetime.now(timezone.utc).isoformat()
-            update_user_tier(str(user["id"]), "free",
-                             subscription_status="canceled",
-                             subscription_ended_at=ended_at)
-            log.info("Subscription cancelled for user %s", user["id"])
+                update_user_tier(str(user["id"]), "free",
+                                 subscription_status="canceled",
+                                 subscription_ended_at=ended_at)
+                log.info("Subscription cancelled for user %s", user["id"])
+    except Exception:
+        # Roll back the idempotency record so Stripe's retry can re-process.
+        if event_id:
+            clear_stripe_webhook(event_id)
+        raise
 
     return JSONResponse({"status": "ok"})
 

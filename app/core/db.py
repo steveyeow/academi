@@ -457,6 +457,17 @@ def init_db() -> None:
 
             # Cleanup: purge usage records older than 30 days (must run after table creation)
             _execute(conn, "DELETE FROM usage WHERE created_at < NOW() - INTERVAL '30 days'")
+
+            # Stripe webhook idempotency: track processed event ids so re-deliveries
+            # don't double-apply tier changes / overwrite subscription timestamps.
+            _execute(conn, """
+                CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+                    event_id TEXT PRIMARY KEY,
+                    processed_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            # Best-effort cleanup of old idempotency records (keep 30 days for replay window)
+            _execute(conn, "DELETE FROM stripe_webhook_events WHERE processed_at < NOW() - INTERVAL '30 days'")
         else:
             _execute(conn, """
                 CREATE TABLE IF NOT EXISTS agents (
@@ -693,6 +704,15 @@ def init_db() -> None:
 
             # Cleanup: purge usage records older than 30 days (must run after table creation)
             _execute(conn, "DELETE FROM usage WHERE created_at < datetime('now', '-30 days')")
+
+            # Stripe webhook idempotency: track processed event ids
+            _execute(conn, """
+                CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+                    event_id TEXT PRIMARY KEY,
+                    processed_at TEXT NOT NULL
+                )
+            """)
+            _execute(conn, "DELETE FROM stripe_webhook_events WHERE processed_at < datetime('now', '-30 days')")
 
     # Migration: copy legacy messages → session_messages (runs once, idempotent)
     try:
@@ -1477,6 +1497,35 @@ def update_user_tier(user_id: str, tier: str, stripe_customer_id: str | None = N
 def find_user_by_stripe_customer(customer_id: str) -> dict[str, Any] | None:
     with get_conn() as conn:
         return _fetchone(conn, _q("SELECT * FROM users WHERE stripe_customer_id = ?"), (customer_id,))
+
+
+def mark_stripe_webhook_processed(event_id: str) -> bool:
+    """Record a Stripe webhook event id. Returns True if newly recorded,
+    False if the event was already processed (Stripe re-delivery)."""
+    with get_conn() as conn:
+        if _USE_PG:
+            cur = _execute(conn,
+                "INSERT INTO stripe_webhook_events (event_id) VALUES (%s) "
+                "ON CONFLICT (event_id) DO NOTHING",
+                (event_id,))
+        else:
+            cur = _execute(conn,
+                "INSERT OR IGNORE INTO stripe_webhook_events (event_id, processed_at) "
+                "VALUES (?, ?)",
+                (event_id, _utcnow()))
+        return (cur.rowcount or 0) > 0
+
+
+def clear_stripe_webhook(event_id: str) -> None:
+    """Forget a recorded webhook event so Stripe's retry can re-process it.
+    Called when handler raised after the idempotency record was inserted."""
+    try:
+        with get_conn() as conn:
+            _execute(conn,
+                _q("DELETE FROM stripe_webhook_events WHERE event_id = ?"),
+                (event_id,))
+    except Exception as exc:
+        log.warning("Failed to clear stripe webhook %s: %s", event_id, exc)
 
 
 def record_usage(user_id: str, action: str, tokens_used: int = 0) -> None:
