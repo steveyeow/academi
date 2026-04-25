@@ -1372,15 +1372,11 @@ def _enrich_ai_book_agents(agents: list[dict[str, Any]]) -> None:
             ai_book = get_ai_book_by_agent(agent["id"])
             if not ai_book:
                 continue
-            # All chapters saved but never finalized (index/complete) — same heal as GET /api/ai-books/{id}
-            if all_outline_chapters_have_content(ai_book):
-                threading.Thread(
-                    target=write_full_book,
-                    args=(ai_book["id"],),
-                    daemon=True,
-                    name=f"heal-ai-book-{ai_book['id'][:8]}",
-                ).start()
-                continue
+            # NOTE: this endpoint is anonymous-readable (homepage list), so we
+            # MUST NOT trigger any LLM work here. We only flip clearly stale
+            # books to "failed" so they don't pile up; resuming writing is
+            # owner-gated and fires from GET /api/ai-books/{id} or the
+            # explicit POST /api/ai-books/{id}/retry endpoint.
             if not ai_book.get("updated_at"):
                 continue
             raw = ai_book["updated_at"]
